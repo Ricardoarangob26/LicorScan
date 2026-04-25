@@ -1,18 +1,54 @@
 # LicorScan Colombia — Scraper
 
+[![Repo](https://img.shields.io/badge/GitHub-Ricardoarangob26%2FLicorScan-181717?logo=github)](https://github.com/Ricardoarangob26/LicorScan)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Frontend](https://img.shields.io/badge/Frontend-React%20CDN-61DAFB?logo=react&logoColor=222)](frontend/index.html)
+
 Comparador de precios de licores y consumibles para fiesta en Colombia.
 Este repo contiene la capa de **extracción de datos** (Playwright) del proyecto.
 
 ## Estado
 
-- [x] Scaffold del proyecto
-- [x] BaseSpider con rate limiting, UA rotation, captura XHR
-- [x] Spider piloto de Éxito (plantilla)
-- [ ] Validación contra exito.com real
-- [ ] Spider de D1
-- [ ] Spiders restantes (Carulla, Olímpica, La Rebaja, Farmatodo)
-- [ ] Pipeline de normalización (fuzzy matching)
-- [ ] Persistencia en Supabase
+- [x] Scrapers funcionales: Éxito, D1, Carulla, Olímpica
+- [x] Exportación de catálogo para frontend (`frontend/catalog-data.js`)
+- [x] Front local con filtros, comparación y panel de histórico
+- [x] Jobs automáticos de scraping + refresh de caché
+- [x] Job separado cache-only (preparado para fuente futura en BD)
+- [ ] Persistencia en BD (fase siguiente)
+
+## Quickstart (Local)
+
+### 1) Instalar dependencias
+
+```bash
+python -m venv venv
+# Windows PowerShell
+venv\Scripts\python.exe -m pip install -r requirements.txt
+venv\Scripts\python.exe -m playwright install chromium
+```
+
+### 2) Correr una pasada de scraping
+
+```bash
+venv\Scripts\python.exe -m scraper.main --store exito
+venv\Scripts\python.exe -m scraper.main --store d1
+venv\Scripts\python.exe -m scraper.main --store carulla
+venv\Scripts\python.exe -m scraper.main --store olimpica
+```
+
+### 3) Generar caché para frontend
+
+```bash
+venv\Scripts\python.exe build_front_catalog.py
+```
+
+### 4) Levantar frontend local
+
+```bash
+venv\Scripts\python.exe -m http.server 5500 --directory frontend
+```
+
+Abrir: `http://127.0.0.1:5500/index.html`
 
 ## Setup
 
