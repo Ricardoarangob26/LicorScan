@@ -1,0 +1,22 @@
+﻿<root>
+    <section title='Arquitectura'>
+        <p>Arquitectura propuesta: Desacoplada en tres capas: 1) Extracción (Scrapers distribuidos con Playwright), 2) Normalización (Pipeline ETL con fuzzy matching para consolidar SKUs de licores), 3) Persistencia y API (Supabase/PostgreSQL).</p>
+        <p>Citando: 'El sistema usará un modelo de Workers distribuidos para evitar bloqueos por IP'.</p>
+    </section>
+    <section title='Cortesía y Rate Limits'>
+        <p>Reglas de cortesía: Basadas en la Tabla 2.2.3 del DTD. Éxito: delay de 10-12s entre requests, máx 300 RPH. D1: delay de 8s, máx 450 RPH. Carulla: igual que Éxito. Farmatodo: se recomienda horario nocturno 02:00-05:00 GMT-5.</p>
+        <p>Citando: 'Los spiders no deben exceder las peticiones por hora (RPH) definidas para no degradar el servicio de terceros'.</p>
+    </section>
+    <section title='Esquema BD'>
+        <p>Esquema de base de datos objetivo: Tablas clave: 'products' (uuid, name, brand, volume_ml, category_id), 'prices' (product_id, store_id, price_cop, stock_status, scraped_at), 'stores' (id, name, base_url).</p>
+        <p>Citando: 'Se usará fuzzy matching sobre el campo name para mapear productos de distintas tiendas a una sola entrada en products'.</p>
+    </section>
+    <section title='Restricciones Legales'>
+        <p>Restricciones legales/T&C: Especial enfoque en Farmatodo. Prohibido scraping de datos personales o detrás de login. Los T&C de Farmatodo prohíben explícitamente el uso de bots para 'data mining'. No obstante, el DTD justifica el uso de datos públicos de precios para comparadores según la ley de transparencia de mercado.</p>
+        <p>Citando: 'Se debe evitar la extracción de imágenes propietarias y limitarse a metadatos de oferta pública'.</p>
+    </section>
+    <section title='Stack Frontend/Backend'>
+        <p>Stack: Backend en Python (FastAPI para la API, Playwright para scraping). Frontend en Next.js con Tailwind CSS. Persistencia en Supabase (PostgreSQL + Auth).</p>
+        <p>Citando: 'El frontend se desplegará en Vercel para garantizar baja latencia y escalabilidad'.</p>
+    </section>
+</root>

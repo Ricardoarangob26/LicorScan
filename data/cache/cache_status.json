@@ -1,0 +1,20 @@
+{
+  "updated_at": "2026-04-24T15:45:13.388481+00:00",
+  "cache": {
+    "path": "frontend/catalog-data.js",
+    "source": "raw_jsonl",
+    "ttl_minutes": 30,
+    "next_refresh_at": "2026-04-24T16:15:13.388481+00:00",
+    "refreshed_this_cycle": true,
+    "mode": "cache_only",
+    "product_count": 1755
+  },
+  "jobs": [
+    {
+      "store": "olimpica",
+      "interval_minutes": 180,
+      "last_run_at": "2026-04-24T15:42:56.123360+00:00",
+      "next_run_at": "2026-04-24T18:42:56.123360+00:00"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.vscode/
+.idea/
+data/raw/*.json
+data/raw/*.jsonl
+!data/raw/.gitkeep
+playwright-report/
+test-results/
+.pytest_cache/

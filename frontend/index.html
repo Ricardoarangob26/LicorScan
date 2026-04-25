@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LicorScan - Front Local</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="./catalog-data.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: oklch(97.5% 0.006 85);
+      --surface: #fff;
+      --border: oklch(88% 0.008 80);
+      --text: oklch(18% 0.01 260);
+      --text2: oklch(45% 0.01 260);
+      --accent: oklch(55% 0.2 250);
+      --accent-light: oklch(95% 0.06 245);
+      --radius: 14px;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
+    }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+    a { color: inherit; }
+    input, select, button { font-family: inherit; }
+    .product-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
+    }
+    .drawer-enter {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    .drawer-exit {
+      transform: translateX(calc(100% + 12px));
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useMemo, useState } = React;
+
+    const CATALOG = window.__CATALOG__ || { products: [], generated_at: null };
+    const PRODUCTS = Array.isArray(CATALOG.products) ? CATALOG.products : [];
+
+    const STORE_COLORS = {
+      exito: "oklch(58% 0.18 145)",
+      d1: "oklch(52% 0.19 255)",
+      carulla: "oklch(55% 0.18 25)",
+      olimpica: "oklch(58% 0.2 310)",
+    };
+
+    const fmt = (value) => new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      minimumFractionDigits: 0,
+    }).format(value || 0);
+
+    function StoreBadge({ id, label }) {
+      return (
+        <span style={{
+          display: "inline-flex",
+          alignItems: "center",
+          fontSize: 11,
+          fontWeight: 700,
+          color: "white",
+          background: STORE_COLORS[id] || "#666",
+          borderRadius: 999,
+          padding: "3px 9px",
+          letterSpacing: ".3px",
+        }}>
+          {label || id}
+        </span>
+      );
+    }
+
+    function getHistoryStats(product) {
+      const history = Array.isArray(product.history) ? product.history : [];
+      if (!history.length) {
+        return {
+          points: [],
+          latest: product.price || null,
+          yesterday: null,
+          weekAgo: null,
+          variancePct: null,
+          varianceCop: null,
+        };
+      }
+
+      const points = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      const latest = points[points.length - 1]?.price ?? product.price ?? null;
+      const yesterday = points.length >= 2 ? points[points.length - 2].price : null;
+      const weekAgo = points.length >= 8 ? points[points.length - 8].price : (points[0]?.price ?? null);
+
+      let varianceCop = null;
+      let variancePct = null;
+      if (latest != null && weekAgo != null) {
+        varianceCop = latest - weekAgo;
+        variancePct = weekAgo === 0 ? null : (varianceCop / weekAgo) * 100;
+      }
+
+      return { points, latest, yesterday, weekAgo, varianceCop, variancePct };
+    }
+
+    function HistoryBadge({ value }) {
+      if (value == null) {
+        return <span style={{ fontSize: 12, color: "var(--text2)" }}>N/D</span>;
+      }
+      const positive = value > 0;
+      const neutral = value === 0;
+      const color = neutral ? "var(--text2)" : positive ? "#b42318" : "#067647";
+      const prefix = neutral ? "=" : positive ? "+" : "";
+      return <span style={{ fontSize: 12, color, fontWeight: 700 }}>{prefix}{value.toFixed(2)}%</span>;
+    }
+
+    function HistoryDelta({ varianceCop, variancePct }) {
+      const hasCop = varianceCop != null;
+      const isUp = hasCop ? varianceCop > 0 : false;
+      const isFlat = hasCop ? varianceCop === 0 : false;
+      const color = isFlat ? "var(--text2)" : isUp ? "#b42318" : "#067647";
+      const copPrefix = isFlat ? "=" : isUp ? "+" : "";
+      return (
+        <span style={{ fontSize: 12, color, fontWeight: 700 }}>
+          {hasCop ? `${copPrefix}${fmt(varianceCop)}` : "N/D"}
+          {variancePct == null ? "" : ` (${isFlat ? "=" : isUp ? "+" : ""}${variancePct.toFixed(2)}%)`}
+        </span>
+      );
+    }
+
+    function Sparkline({ points }) {
+      if (!points || points.length < 2) {
+        return (
+          <div style={{
+            height: 72,
+            border: "1px dashed var(--border)",
+            borderRadius: 10,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text2)",
+            fontSize: 12,
+          }}>
+            No hay suficientes puntos
+          </div>
+        );
+      }
+
+      const width = 680;
+      const height = 72;
+      const values = points.map((p) => p.price || 0);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const range = max - min || 1;
+
+      const poly = points
+        .map((point, idx) => {
+          const x = (idx / (points.length - 1)) * (width - 8) + 4;
+          const y = height - (((point.price - min) / range) * (height - 10) + 5);
+          return `${x},${y}`;
+        })
+        .join(" ");
+
+      return (
+        <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 8, background: "#fbfdff" }}>
+          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="72" preserveAspectRatio="none">
+            <polyline fill="none" stroke="var(--accent)" strokeWidth="2.2" points={poly} />
+          </svg>
+          <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text2)" }}>
+            <span>{points[0].date}</span>
+            <span>min {fmt(min)} • max {fmt(max)}</span>
+            <span>{points[points.length - 1].date}</span>
+          </div>
+        </div>
+      );
+    }
+
+    function ComparisonModal({ items, onClose, onRemove }) {
+      const prices = items.map((p) => p.price || 0);
+      const min = prices.length ? Math.min(...prices) : 0;
+
+      return (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,.45)",
+          zIndex: 80,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 18,
+        }} onClick={onClose}>
+          <div style={{
+            width: "min(1100px, 100%)",
+            maxHeight: "90vh",
+            overflowY: "auto",
+            background: "white",
+            borderRadius: 16,
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow)",
+            padding: 16,
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Comparacion de productos</h3>
+              <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
+              Puedes comparar hasta 4 articulos de la misma tienda o de tiendas distintas.
+            </p>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(180px, 1fr))`,
+              gap: 12,
+            }}>
+              {items.map((item) => {
+                const stats = getHistoryStats(item);
+                const isCheapest = (item.price || 0) === min;
+                return (
+                  <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: isCheapest ? "var(--accent-light)" : "white" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                      <StoreBadge id={item.store} label={item.store_name || item.store} />
+                      <button onClick={() => onRemove(item)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text2)", fontSize: 18 }}>×</button>
+                    </div>
+                    <h4 style={{ fontSize: 13, marginTop: 8, minHeight: 36 }}>{item.title}</h4>
+                    <p style={{ marginTop: 8, fontFamily: "Sora", fontWeight: 700, color: "var(--accent)", fontSize: 18 }}>{fmt(item.price)}</p>
+                    {isCheapest && <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Mas barato</p>}
+
+                    <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8, display: "grid", gap: 5 }}>
+                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
+                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Semana pasada: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
+                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ComparisonDrawer({ items, open, onRemove, onClear, onCompare }) {
+      return (
+        <aside className={open ? "drawer-enter" : "drawer-exit"} style={{
+          position: "fixed",
+          top: 88,
+          right: 14,
+          width: 320,
+          maxHeight: "calc(100vh - 104px)",
+          overflowY: "auto",
+          background: "white",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          boxShadow: "var(--shadow)",
+          zIndex: 40,
+          transition: "transform .24s ease, opacity .24s ease",
+          display: "grid",
+          gridTemplateRows: "auto 1fr auto",
+        }}>
+          <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div>
+              <p style={{ fontFamily: "Sora", fontSize: 14, fontWeight: 700 }}>Seleccion para comparar</p>
+              <p style={{ fontSize: 11, color: "var(--text2)" }}>{items.length}/4 articulos</p>
+            </div>
+            <button onClick={onClear} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "5px 8px" }}>
+              Limpiar
+            </button>
+          </div>
+
+          <div style={{ padding: 10, display: "grid", gap: 8 }}>
+            {items.length ? items.map((item) => (
+              <div key={item.id} style={{
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "8px 9px",
+                display: "grid",
+                gridTemplateColumns: "1fr auto",
+                gap: 8,
+                alignItems: "start",
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <StoreBadge id={item.store} label={item.store_name || item.store} />
+                  <p style={{ fontSize: 12, fontWeight: 600, marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.title}</p>
+                  <p style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginTop: 3 }}>{fmt(item.price)}</p>
+                </div>
+                <button
+                  onClick={() => onRemove(item)}
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    border: "1px solid var(--border)",
+                    background: "white",
+                    cursor: "pointer",
+                    color: "var(--text2)",
+                    fontSize: 16,
+                    lineHeight: 1,
+                    flexShrink: 0,
+                  }}
+                  title="Quitar"
+                >
+                  ×
+                </button>
+              </div>
+            )) : (
+              <div style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: 10, fontSize: 12, color: "var(--text2)" }}>
+                Haz click en tarjetas para agregarlas a la comparacion.
+              </div>
+            )}
+          </div>
+
+          <div style={{ padding: 10, borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
+            <button
+              disabled={items.length < 2}
+              onClick={onCompare}
+              style={{
+                flex: 1,
+                border: "none",
+                borderRadius: 10,
+                padding: "9px 10px",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: items.length >= 2 ? "pointer" : "not-allowed",
+                background: items.length >= 2 ? "var(--accent)" : "#d0d5dd",
+                color: "white",
+              }}
+            >
+              Comparar ahora
+            </button>
+          </div>
+        </aside>
+      );
+    }
+
+    function HistoryModal({ product, onClose }) {
+      const stats = getHistoryStats(product);
+      return (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,.45)",
+          zIndex: 75,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 18,
+        }} onClick={onClose}>
+          <div style={{
+            width: "min(760px, 100%)",
+            background: "white",
+            borderRadius: 16,
+            border: "1px solid var(--border)",
+            boxShadow: "var(--shadow)",
+            padding: 16,
+          }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Historico de precio</h3>
+              <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
+            </div>
+            <StoreBadge id={product.store} label={product.store_name || product.store} />
+            <h4 style={{ marginTop: 10, fontSize: 16 }}>{product.title}</h4>
+
+            <div style={{
+              marginTop: 14,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 10,
+            }}>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>Precio actual</p>
+                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.latest == null ? "N/D" : fmt(stats.latest)}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer</p>
+                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana pasada</p>
+                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</p>
+              </div>
+              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza</p>
+                <p><HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 6 }}>Tendencia de precio</p>
+              <Sparkline points={stats.points} />
+            </div>
+
+            <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+              <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>Registros disponibles ({stats.points.length})</p>
+              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
+                {stats.points.length ? stats.points.map((point) => (
+                  <div key={`${point.date}-${point.price}`} style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", borderTop: "1px solid var(--border)", fontSize: 13 }}>
+                    <span>{point.date}</span>
+                    <strong>{fmt(point.price)}</strong>
+                  </div>
+                )) : <div style={{ padding: 10, fontSize: 13, color: "var(--text2)" }}>No hay historial suficiente todavia.</div>}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function Card({ product, selected, onToggleSelect, onOpenHistory }) {
+      const stats = getHistoryStats(product);
+      return (
+        <article
+          onClick={() => onToggleSelect(product)}
+          title="Click para seleccionar o quitar de comparación"
+          className="product-card"
+          style={{
+          background: "var(--surface)",
+          border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          boxShadow: "var(--shadow)",
+          position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          padding: 14,
+          gap: 10,
+          cursor: "pointer",
+          transition: "transform .15s ease, box-shadow .15s ease",
+        }}>
+          {selected && (
+            <span style={{
+              position: "absolute",
+              top: 8,
+              left: 8,
+              background: "var(--accent)",
+              color: "white",
+              borderRadius: 999,
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "4px 8px",
+              letterSpacing: ".2px",
+              zIndex: 2,
+            }}>
+              Seleccionado
+            </span>
+          )}
+          <div style={{
+            width: "100%",
+            aspectRatio: "1/1",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+            background: "#f8f8f8",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            overflow: "hidden",
+          }}>
+            {product.img ? (
+              <img src={product.img} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--text2)" }}>sin imagen</span>
+            )}
+          </div>
+
+          <StoreBadge id={product.store} label={product.store_name || product.store} />
+
+          <h3 style={{ fontSize: 14, lineHeight: 1.35, minHeight: 40 }}>{product.title}</h3>
+
+          <p style={{ fontSize: 12, color: "var(--text2)" }}>
+            {product.category || "Otros"}
+          </p>
+
+          <div style={{
+            marginTop: 4,
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            padding: 8,
+            background: "#fafafa",
+            display: "grid",
+            gap: 4,
+          }}>
+            <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
+            <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
+            <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+          </div>
+
+          <div style={{
+            marginTop: "auto",
+            paddingTop: 8,
+            borderTop: "1px solid var(--border)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+          }}>
+            <strong style={{ fontFamily: "Sora", color: "var(--accent)", fontSize: 18 }}>{fmt(product.price)}</strong>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <button onClick={(e) => { e.stopPropagation(); onToggleSelect(product); }} style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: selected ? "white" : "var(--accent)",
+                background: selected ? "var(--accent)" : "white",
+                border: "1px solid var(--accent)",
+                borderRadius: 8,
+                padding: "5px 8px",
+                cursor: "pointer",
+              }}>{selected ? "Seleccionado" : "Comparar"}</button>
+              <button onClick={(e) => { e.stopPropagation(); onOpenHistory(product); }} style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--text)",
+                background: "white",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                padding: "5px 8px",
+                cursor: "pointer",
+              }}>Historico</button>
+              <a href={product.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--accent)",
+                textDecoration: "none",
+                border: "1px solid var(--accent)",
+                borderRadius: 8,
+                padding: "5px 8px",
+              }}>Ver</a>
+            </div>
+          </div>
+        </article>
+      );
+    }
+
+    function App() {
+      const [query, setQuery] = useState("");
+      const [category, setCategory] = useState("Todos");
+      const [store, setStore] = useState("Todos");
+      const [maxPrice, setMaxPrice] = useState(() => {
+        const max = PRODUCTS.reduce((acc, item) => Math.max(acc, item.price || 0), 0);
+        return Math.max(max, 10000);
+      });
+      const [sort, setSort] = useState("relevance");
+      const [comparison, setComparison] = useState([]);
+      const [historyProduct, setHistoryProduct] = useState(null);
+      const [drawerOpen, setDrawerOpen] = useState(true);
+
+      const categories = useMemo(() => {
+        const set = new Set(PRODUCTS.map((p) => p.category || "Otros"));
+        return ["Todos", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+      }, []);
+
+      const stores = useMemo(() => {
+        const set = new Set(PRODUCTS.map((p) => p.store || "otros"));
+        return ["Todos", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+      }, []);
+
+      const filtered = useMemo(() => {
+        let rows = PRODUCTS;
+        if (query.trim()) {
+          const q = query.toLowerCase();
+          rows = rows.filter((p) => (p.title || "").toLowerCase().includes(q));
+        }
+        if (category !== "Todos") {
+          rows = rows.filter((p) => (p.category || "Otros") === category);
+        }
+        if (store !== "Todos") {
+          rows = rows.filter((p) => p.store === store);
+        }
+        rows = rows.filter((p) => (p.price || 0) <= maxPrice);
+
+        if (sort === "price_asc") rows = [...rows].sort((a, b) => a.price - b.price);
+        if (sort === "price_desc") rows = [...rows].sort((a, b) => b.price - a.price);
+        return rows;
+      }, [query, category, store, maxPrice, sort]);
+
+      const maxAvailable = PRODUCTS.reduce((acc, item) => Math.max(acc, item.price || 0), 0);
+
+      const comparisonWarning = useMemo(() => {
+        if (comparison.length < 2) return "";
+        const categories = new Set(comparison.map((item) => item.category || "Otros"));
+        return categories.size > 1 ? "Recomendacion: compara productos del mismo tipo/categoria para mejor lectura." : "";
+      }, [comparison]);
+
+      const toggleCompare = (product) => {
+        setComparison((prev) => {
+          const exists = prev.some((item) => item.id === product.id);
+          if (exists) return prev.filter((item) => item.id !== product.id);
+          if (prev.length >= 4) return prev;
+          return [...prev, product];
+        });
+        setDrawerOpen(true);
+      };
+
+      return (
+        <div>
+          <header style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            background: "white",
+            borderBottom: "1px solid var(--border)",
+          }}>
+            <div style={{ maxWidth: 1400, margin: "0 auto", padding: "14px 20px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+              <h1 style={{ fontFamily: "Sora", fontWeight: 800, fontSize: 24, marginRight: 8 }}>
+                Licor<span style={{ color: "var(--accent)" }}>Scan</span>
+              </h1>
+
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Buscar producto..."
+                style={{
+                  minWidth: 220,
+                  flex: 1,
+                  border: "1.5px solid var(--border)",
+                  borderRadius: 10,
+                  padding: "9px 12px",
+                  background: "var(--bg)",
+                }}
+              />
+
+              <select value={store} onChange={(e) => setStore(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
+                {stores.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+
+              <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
+                {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+
+              <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
+                <option value="relevance">Relevancia</option>
+                <option value="price_asc">Precio: menor a mayor</option>
+                <option value="price_desc">Precio: mayor a menor</option>
+              </select>
+            </div>
+          </header>
+
+          <main style={{ maxWidth: 1400, margin: "0 auto", padding: "20px" }}>
+            <div style={{ marginBottom: 14, color: "var(--text2)", fontSize: 14 }}>
+              <strong style={{ color: "var(--text)" }}>{filtered.length}</strong> productos
+              {CATALOG.generated_at ? ` • catálogo generado ${new Date(CATALOG.generated_at).toLocaleString("es-CO")}` : ""}
+            </div>
+
+            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button
+                disabled={comparison.length < 2}
+                onClick={() => setHistoryProduct({ __compare_mode: true })}
+                style={{
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "8px 12px",
+                  fontWeight: 700,
+                  cursor: comparison.length >= 2 ? "pointer" : "not-allowed",
+                  background: comparison.length >= 2 ? "var(--accent)" : "#d0d5dd",
+                  color: "white",
+                }}
+              >
+                Comparar seleccion ({comparison.length}/4)
+              </button>
+              <button
+                onClick={() => setComparison([])}
+                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
+              >
+                Limpiar seleccion
+              </button>
+              <button
+                onClick={() => setDrawerOpen((prev) => !prev)}
+                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
+              >
+                {drawerOpen ? "Ocultar barra" : "Mostrar barra"}
+              </button>
+              {comparisonWarning ? <span style={{ fontSize: 12, color: "#b54708" }}>{comparisonWarning}</span> : null}
+            </div>
+
+            <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 13, color: "var(--text2)" }}>Precio máximo:</span>
+              <input type="range" min={0} max={Math.max(maxAvailable, 10000)} step={500} value={maxPrice} onChange={(e) => setMaxPrice(+e.target.value)} style={{ width: 240 }} />
+              <strong style={{ color: "var(--accent)" }}>{fmt(maxPrice)}</strong>
+            </div>
+
+            {filtered.length ? (
+              <section style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
+                gap: 16,
+              }}>
+                {filtered.map((item) => (
+                  <Card
+                    key={item.id}
+                    product={item}
+                    selected={comparison.some((entry) => entry.id === item.id)}
+                    onToggleSelect={toggleCompare}
+                    onOpenHistory={setHistoryProduct}
+                  />
+                ))}
+              </section>
+            ) : (
+              <div style={{
+                padding: "42px 18px",
+                background: "white",
+                border: "1px solid var(--border)",
+                borderRadius: 14,
+                textAlign: "center",
+                color: "var(--text2)",
+              }}>
+                Sin resultados con los filtros actuales.
+              </div>
+            )}
+          </main>
+
+          {historyProduct && historyProduct.__compare_mode && (
+            <ComparisonModal
+              items={comparison}
+              onClose={() => setHistoryProduct(null)}
+              onRemove={(item) => setComparison((prev) => prev.filter((entry) => entry.id !== item.id))}
+            />
+          )}
+          {historyProduct && !historyProduct.__compare_mode && (
+            <HistoryModal
+              product={historyProduct}
+              onClose={() => setHistoryProduct(null)}
+            />
+          )}
+
+          <ComparisonDrawer
+            items={comparison}
+            open={drawerOpen && comparison.length > 0}
+            onRemove={(item) => setComparison((prev) => prev.filter((entry) => entry.id !== item.id))}
+            onClear={() => setComparison([])}
+            onCompare={() => setHistoryProduct({ __compare_mode: true })}
+          />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+  </script>
+</body>
+</html>
