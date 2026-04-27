@@ -108,6 +108,21 @@
       return { points, latest, yesterday, weekAgo, varianceCop, variancePct };
     }
 
+    function getPricingContext(product) {
+      return product.pricing_context || {};
+    }
+
+    function formatEventSignals(signals) {
+      if (!Array.isArray(signals) || !signals.length) return "";
+      return signals
+        .map((signal) => {
+          const prefix = signal.kind === "holiday" ? "Festivo" : "Partido local";
+          const direction = signal.days_offset < 0 ? "antes" : signal.days_offset > 0 ? "despues" : "mismo dia";
+          return `${prefix}: ${signal.label} (${direction})`;
+        })
+        .join(" • ");
+    }
+
     function HistoryBadge({ value }) {
       if (value == null) {
         return <span style={{ fontSize: 12, color: "var(--text2)" }}>N/D</span>;
@@ -340,6 +355,8 @@
 
     function HistoryModal({ product, onClose }) {
       const stats = getHistoryStats(product);
+      const pricing = getPricingContext(product);
+      const signalSummary = formatEventSignals(pricing.signals);
       return (
         <div style={{
           position: "fixed",
@@ -395,6 +412,19 @@
               <Sparkline points={stats.points} />
             </div>
 
+            <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "#fbfdff" }}>
+              <p style={{ fontSize: 11, color: "var(--text2)" }}>Lectura de descuento</p>
+              <p style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                {pricing.has_discount ? `Descuento estimado de ${pricing.discount_pct != null ? pricing.discount_pct.toFixed(2) : "0.00"}% sobre ${fmt(pricing.reference_price)}` : "Sin descuento claro en el historial observado"}
+              </p>
+              {pricing.discount_start && pricing.discount_observed_until ? (
+                <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>
+                  Detectado desde {pricing.discount_start} y vigente al menos hasta {pricing.discount_observed_until}.
+                </p>
+              ) : null}
+              {signalSummary ? <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>{signalSummary}</p> : null}
+            </div>
+
             <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
               <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>Registros disponibles ({stats.points.length})</p>
               <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
@@ -413,6 +443,8 @@
 
     function Card({ product, selected, onToggleSelect, onOpenHistory }) {
       const stats = getHistoryStats(product);
+      const pricing = getPricingContext(product);
+      const signalSummary = formatEventSignals(pricing.signals);
       return (
         <article
           onClick={() => onToggleSelect(product)}
@@ -486,6 +518,8 @@
             <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
             <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
             <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+            {pricing.has_discount ? <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Descuento: {pricing.discount_pct != null ? `${pricing.discount_pct.toFixed(2)}%` : "N/D"}</p> : null}
+            {signalSummary ? <p style={{ fontSize: 10, color: "var(--text2)" }}>{signalSummary}</p> : null}
           </div>
 
           <div style={{

@@ -63,54 +63,69 @@ class OlimpicaSpider(BaseSpider):
 
     async def _scrape_category(self, page: Page, url: str, category: str) -> None:
         seen: set[str] = set()
-        await self.goto_with_retry(page, url)
-        await page.wait_for_selector(self.PRODUCT_SELECTOR, timeout=20_000)
+        page_number = 0
+        max_pages = 35
 
-        cards = page.locator(self.PRODUCT_SELECTOR)
-        count = await cards.count()
-        new_count = 0
+        while page_number < max_pages:
+            current_url = self._page_url(url, page_number)
+            await self.goto_with_retry(page, current_url)
+            await page.wait_for_selector(self.PRODUCT_SELECTOR, timeout=20_000)
 
-        for i in range(count):
-            card = cards.nth(i)
-            name = await self._safe_text(card, "h3") or await self._safe_text(card, "[class*='brand'], [class*='name']")
-            if not name:
-                continue
+            cards = page.locator(self.PRODUCT_SELECTOR)
+            count = await cards.count()
+            new_count = 0
 
-            normalized_name = self._normalize_text(name)
-            if not self._looks_like_liquor(normalized_name):
-                continue
+            for i in range(count):
+                card = cards.nth(i)
+                name = await self._safe_text(card, "h3") or await self._safe_text(card, "[class*='brand'], [class*='name']")
+                if not name:
+                    continue
 
-            price_raw = await self._extract_price_text(card)
-            img_src = await self._safe_attr(card, self.IMAGE_SELECTOR, "src")
+                normalized_name = self._normalize_text(name)
+                if not self._looks_like_liquor(normalized_name):
+                    continue
 
-            detail_url = await self._resolve_detail_url(page, card)
-            if not detail_url or detail_url in seen:
-                continue
+                price_raw = await self._extract_price_text(card)
+                img_src = await self._safe_attr(card, self.IMAGE_SELECTOR, "src")
 
-            seen.add(detail_url)
-            new_count += 1
+                detail_url = await self._resolve_detail_url(page, card)
+                if not detail_url or detail_url in seen:
+                    continue
 
-            price_raw = self._clean_price_text(price_raw)
-            price_cop = self.parse_cop_price(price_raw) if price_raw else None
-            if price_cop is None:
-                detail_price_raw = await self._fetch_detail_price(page, detail_url)
-                detail_price_raw = self._clean_price_text(detail_price_raw)
-                price_cop = self.parse_cop_price(detail_price_raw) if detail_price_raw else None
+                seen.add(detail_url)
+                new_count += 1
 
-            self.add_product(
-                ScrapedProduct(
-                    store=self.store_id,
-                    store_name=self.store_name,
-                    name=name,
-                    price_cop=price_cop,
-                    url=detail_url,
-                    image_url=img_src,
-                    category=category,
-                    source_page_url=page.url,
+                price_raw = self._clean_price_text(price_raw)
+                price_cop = self.parse_cop_price(price_raw) if price_raw else None
+                if price_cop is None:
+                    detail_price_raw = await self._fetch_detail_price(page, detail_url)
+                    detail_price_raw = self._clean_price_text(detail_price_raw)
+                    price_cop = self.parse_cop_price(detail_price_raw) if detail_price_raw else None
+
+                self.add_product(
+                    ScrapedProduct(
+                        store=self.store_id,
+                        store_name=self.store_name,
+                        name=name,
+                        price_cop=price_cop,
+                        url=detail_url,
+                        image_url=img_src,
+                        category=category,
+                        source_page_url=page.url,
+                    )
                 )
-            )
 
-        logger.info(f"[{self.store_id}] '{category}': {count} visibles, {new_count} nuevos")
+            logger.info(f"[{self.store_id}] Página {page_number} de '{category}': {count} visibles, {new_count} nuevos")
+            if new_count == 0:
+                break
+            page_number += 1
+
+    @staticmethod
+    def _page_url(base_url: str, page_number: int) -> str:
+        if page_number <= 0:
+            return base_url
+        separator = "&" if "?" in base_url else "?"
+        return f"{base_url}{separator}page={page_number}"
 
     async def _resolve_detail_url(self, page: Page, card) -> str | None:
         """Obtiene la URL del producto desde el anchor que envuelve el card."""

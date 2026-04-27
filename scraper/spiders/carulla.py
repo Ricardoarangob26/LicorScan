@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import re
+from urllib.request import Request, urlopen
+
 from loguru import logger
 from playwright.async_api import Page
 
@@ -16,7 +21,7 @@ class CarullaSpider(BaseSpider):
     categories = STORES["carulla"]["categories"]
 
     PRODUCT_SELECTOR = 'a.productCard_productLinkInfo__It3J2[href*="/p"]'
-    PRICE_SELECTOR = 'p[class*="ProductPrice_container__price"]'
+    PRICE_SELECTOR = 'p[data-fs-unit-price="true"]'
     IMAGE_SELECTOR = "img[src]"
 
     async def scrape(self, page: Page) -> None:
@@ -56,8 +61,12 @@ class CarullaSpider(BaseSpider):
                 name = await self._safe_text(card, "h3") or self._extract_name(card, text)
                 if not name:
                     continue
-                price_raw = await self._safe_text(card, self.PRICE_SELECTOR)
-                img_src = await self._safe_attr(card, self.IMAGE_SELECTOR, "src")
+
+                price_raw, img_src = await self._fetch_product_details(absolute_url)
+                if not price_raw:
+                    price_raw = await self._extract_price_from_card(card)
+                if not img_src:
+                    img_src = await self._safe_attr(card, self.IMAGE_SELECTOR, "src")
 
                 self.add_product(
                     ScrapedProduct(
@@ -77,6 +86,70 @@ class CarullaSpider(BaseSpider):
             if new_count == 0:
                 break
             page_number += 1
+
+    async def _extract_price_from_card(self, card) -> str:
+        """Fallback para cuando el detalle no responde."""
+        price = await self._safe_text(card, self.PRICE_SELECTOR)
+        if price and price.strip():
+            return price
+
+        all_text = await card.text_content() or ""
+        matches = re.findall(r"\$\s*[\d.]+(?:,\d{2})?", all_text)
+        if matches:
+            def score(value: str) -> tuple[int, int]:
+                digits = re.sub(r"\D", "", value)
+                thousands = 1 if "." in value else 0
+                return thousands, len(digits)
+
+            return max(matches, key=score)
+        return ""
+
+    async def _fetch_product_details(self, product_url: str) -> tuple[str | None, str | None]:
+        return await asyncio.to_thread(self._fetch_product_details_sync, product_url)
+
+    def _fetch_product_details_sync(self, product_url: str) -> tuple[str | None, str | None]:
+        try:
+            request = Request(product_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urlopen(request, timeout=30) as response:
+                html = response.read().decode("utf-8", errors="ignore")
+        except Exception:
+            return None, None
+
+        scripts = re.findall(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+        for script in scripts:
+            script = script.strip()
+            if not script:
+                continue
+            try:
+                payload = json.loads(script)
+            except Exception:
+                continue
+
+            if not isinstance(payload, dict) or payload.get("@type") != "Product":
+                continue
+
+            image_url = None
+            image = payload.get("image")
+            if isinstance(image, list) and image:
+                first_image = image[0]
+                if isinstance(first_image, str):
+                    image_url = first_image
+            elif isinstance(image, str):
+                image_url = image
+
+            offer_price = None
+            offers = payload.get("offers")
+            if isinstance(offers, dict):
+                offer_price = offers.get("price") or offers.get("lowPrice") or offers.get("highPrice")
+                nested_offers = offers.get("offers")
+                if offer_price is None and isinstance(nested_offers, list) and nested_offers:
+                    first_offer = nested_offers[0]
+                    if isinstance(first_offer, dict):
+                        offer_price = first_offer.get("price") or first_offer.get("listPrice")
+
+            return (str(offer_price) if offer_price is not None else None, image_url)
+
+        return None, None
 
     @staticmethod
     def _page_url(base_url: str, page_number: int) -> str:

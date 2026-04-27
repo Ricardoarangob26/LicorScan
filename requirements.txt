@@ -4,3 +4,4 @@ loguru
 tenacity
 pytest
 pytest-asyncio
+holidays

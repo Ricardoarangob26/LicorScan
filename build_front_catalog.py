@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 
+from scraper.pricing_context import build_pricing_context, load_real_cartagena_home_matches
+
 
 BASE_DIR = Path(__file__).resolve().parent
 RAW_DIR = BASE_DIR / "data" / "raw"
@@ -26,6 +28,7 @@ class FrontProduct:
     url: str
     scraped_date: str | None
     history: list[dict[str, object]]
+    pricing_context: dict[str, object]
 
 
 def _jsonl_by_store() -> dict[str, list[Path]]:
@@ -87,7 +90,12 @@ def _build_history_map(files: list[Path]) -> dict[tuple[str, str], list[dict[str
     return out
 
 
-def _load_products_from_file(path: Path, start_id: int, history_map: dict[tuple[str, str], list[dict[str, object]]]) -> list[FrontProduct]:
+def _load_products_from_file(
+    path: Path,
+    start_id: int,
+    history_map: dict[tuple[str, str], list[dict[str, object]]],
+    real_cartagena_matches: list[dict[str, object]],
+) -> list[FrontProduct]:
     rows: list[FrontProduct] = []
     next_id = start_id
     seen_urls: set[str] = set()
@@ -109,6 +117,7 @@ def _load_products_from_file(path: Path, start_id: int, history_map: dict[tuple[
 
             seen_urls.add(url)
             history_key = (url, name)
+            history = history_map.get(history_key, [])
             rows.append(
                 FrontProduct(
                     id=next_id,
@@ -120,7 +129,8 @@ def _load_products_from_file(path: Path, start_id: int, history_map: dict[tuple[
                     img=item.get("image_url"),
                     url=url,
                     scraped_date=item.get("scraped_date"),
-                    history=history_map.get(history_key, []),
+                    history=history,
+                    pricing_context=build_pricing_context(history, home_matches=real_cartagena_matches),
                 )
             )
             next_id += 1
@@ -133,6 +143,7 @@ def build_catalog() -> dict[str, object]:
     products: list[FrontProduct] = []
     next_id = 1
     latest_files: dict[str, Path] = {}
+    real_cartagena_matches = load_real_cartagena_home_matches()
 
     for store in sorted(files_by_store):
         store_files = files_by_store[store]
@@ -141,7 +152,7 @@ def build_catalog() -> dict[str, object]:
         history_files = store_files[:HISTORY_FILES_PER_STORE]
         history_map = _build_history_map(history_files)
 
-        rows = _load_products_from_file(latest_file, next_id, history_map)
+        rows = _load_products_from_file(latest_file, next_id, history_map, real_cartagena_matches)
         products.extend(rows)
         next_id += len(rows)
 
