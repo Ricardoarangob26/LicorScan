@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>LicorScan - Front Local</title>
+  <title>LicorScan - Comparador de Precios</title>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -38,789 +38,403 @@
       opacity: 0;
       pointer-events: none;
     }
+    .data-source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .data-source-badge.live {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .data-source-badge.cache {
+      background: #fef3c7;
+      color: #92400e;
+    }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useMemo, useState } = React;
+    const { useMemo, useState, useEffect } = React;
 
-    const CATALOG = window.__CATALOG__ || { products: [], generated_at: null };
-    const PRODUCTS = Array.isArray(CATALOG.products) ? CATALOG.products : [];
+    // Supabase config from env or fallback
+    const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://bwxxifwqnkrfbegoycod.supabase.co";
+    const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3eHhpZndxbmtyZmJlZ295Y29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTQzMjkzNDksImV4cCI6MTczOTkwNTM0OX0.3g_CcUcp3WI890zg0IGPeg_zI9j1QCq";
 
-    const STORE_COLORS = {
-      exito: "oklch(58% 0.18 145)",
-      d1: "oklch(52% 0.19 255)",
-      carulla: "oklch(55% 0.18 25)",
-      olimpica: "oklch(58% 0.2 310)",
-    };
+    // Start with static catalog as fallback
+    const STATIC_CATALOG = window.__CATALOG__ || { products: [], generated_at: null };
 
-    const fmt = (value) => new Intl.NumberFormat("es-CO", {
-      style: "currency",
-      currency: "COP",
-      minimumFractionDigits: 0,
-    }).format(value || 0);
-
-    function StoreBadge({ id, label }) {
-      return (
-        <span style={{
-          display: "inline-flex",
-          alignItems: "center",
-          fontSize: 11,
-          fontWeight: 700,
-          color: "white",
-          background: STORE_COLORS[id] || "#666",
-          borderRadius: 999,
-          padding: "3px 9px",
-          letterSpacing: ".3px",
-        }}>
-          {label || id}
-        </span>
-      );
-    }
-
-    function getHistoryStats(product) {
-      const history = Array.isArray(product.history) ? product.history : [];
-      if (!history.length) {
-        return {
-          points: [],
-          latest: product.price || null,
-          yesterday: null,
-          weekAgo: null,
-          variancePct: null,
-          varianceCop: null,
-        };
+    async function fetchProductsFromSupabase() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/products?limit=5000`, {
+          headers: {
+            apikey: SUPABASE_ANON,
+            Authorization: `Bearer ${SUPABASE_ANON}`,
+          },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data;
+      } catch (error) {
+        console.warn("Supabase fetch failed, using cached data:", error.message);
+        return null;
       }
-
-      const points = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-      const latest = points[points.length - 1]?.price ?? product.price ?? null;
-      const yesterday = points.length >= 2 ? points[points.length - 2].price : null;
-      const weekAgo = points.length >= 8 ? points[points.length - 8].price : (points[0]?.price ?? null);
-
-      let varianceCop = null;
-      let variancePct = null;
-      if (latest != null && weekAgo != null) {
-        varianceCop = latest - weekAgo;
-        variancePct = weekAgo === 0 ? null : (varianceCop / weekAgo) * 100;
-      }
-
-      return { points, latest, yesterday, weekAgo, varianceCop, variancePct };
     }
 
-    function getPricingContext(product) {
-      return product.pricing_context || {};
-    }
+    function App() {
+      const [products, setProducts] = useState(STATIC_CATALOG.products || []);
+      const [dataSource, setDataSource] = useState("cache"); // "cache" or "live"
+      const [loading, setLoading] = useState(false);
 
-    function formatEventSignals(signals) {
-      if (!Array.isArray(signals) || !signals.length) return "";
-      return signals
-        .map((signal) => {
-          const prefix = signal.kind === "holiday" ? "Festivo" : "Partido local";
-          const direction = signal.days_offset < 0 ? "antes" : signal.days_offset > 0 ? "despues" : "mismo dia";
-          return `${prefix}: ${signal.label} (${direction})`;
-        })
-        .join(" • ");
-    }
+      // Load data on mount
+      useEffect(() => {
+        (async () => {
+          setLoading(true);
+          const sbData = await fetchProductsFromSupabase();
+          if (sbData && sbData.length > 0) {
+            setProducts(sbData);
+            setDataSource("live");
+          }
+          setLoading(false);
+        })();
+      }, []);
 
-    function HistoryBadge({ value }) {
-      if (value == null) {
-        return <span style={{ fontSize: 12, color: "var(--text2)" }}>N/D</span>;
-      }
-      const positive = value > 0;
-      const neutral = value === 0;
-      const color = neutral ? "var(--text2)" : positive ? "#b42318" : "#067647";
-      const prefix = neutral ? "=" : positive ? "+" : "";
-      return <span style={{ fontSize: 12, color, fontWeight: 700 }}>{prefix}{value.toFixed(2)}%</span>;
-    }
+      const [selectedForComparison, setSelectedForComparison] = useState([]);
+      const [showComparisonModal, setShowComparisonModal] = useState(false);
+      const [showHistoryModal, setShowHistoryModal] = useState(null);
+      const [searchQuery, setSearchQuery] = useState("");
+      const [selectedStore, setSelectedStore] = useState("");
+      const [drawerMinimized, setDrawerMinimized] = useState(false);
 
-    function HistoryDelta({ varianceCop, variancePct }) {
-      const hasCop = varianceCop != null;
-      const isUp = hasCop ? varianceCop > 0 : false;
-      const isFlat = hasCop ? varianceCop === 0 : false;
-      const color = isFlat ? "var(--text2)" : isUp ? "#b42318" : "#067647";
-      const copPrefix = isFlat ? "=" : isUp ? "+" : "";
-      return (
-        <span style={{ fontSize: 12, color, fontWeight: 700 }}>
-          {hasCop ? `${copPrefix}${fmt(varianceCop)}` : "N/D"}
-          {variancePct == null ? "" : ` (${isFlat ? "=" : isUp ? "+" : ""}${variancePct.toFixed(2)}%)`}
-        </span>
-      );
-    }
+      const STORE_COLORS = {
+        exito: "oklch(58% 0.18 145)",
+        d1: "oklch(52% 0.19 255)",
+        carulla: "oklch(55% 0.18 25)",
+        olimpica: "oklch(58% 0.2 310)",
+      };
 
-    function Sparkline({ points }) {
-      if (!points || points.length < 2) {
+      const fmt = (value) => new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(value || 0);
+
+      const filteredProducts = useMemo(() => {
+        return products.filter((p) => {
+          const matchSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchStore = !selectedStore || p.store === selectedStore;
+          return matchSearch && matchStore;
+        });
+      }, [products, searchQuery, selectedStore]);
+
+      const uniqueStores = [...new Set(products.map((p) => p.store))].sort();
+
+      const toggleCompare = (product) => {
+        if (selectedForComparison.find((p) => p.id === product.id)) {
+          setSelectedForComparison(selectedForComparison.filter((p) => p.id !== product.id));
+        } else if (selectedForComparison.length < 4) {
+          setSelectedForComparison([...selectedForComparison, product]);
+          if (!drawerMinimized) setShowComparisonModal(true);
+        }
+      };
+
+      function StoreBadge({ id, label }) {
         return (
-          <div style={{
-            height: 72,
-            border: "1px dashed var(--border)",
-            borderRadius: 10,
-            display: "flex",
+          <span style={{
+            display: "inline-flex",
             alignItems: "center",
-            justifyContent: "center",
-            color: "var(--text2)",
-            fontSize: 12,
+            fontSize: 11,
+            fontWeight: 700,
+            color: "white",
+            background: STORE_COLORS[id] || "#666",
+            borderRadius: 999,
+            padding: "3px 9px",
+            letterSpacing: ".3px",
           }}>
-            No hay suficientes puntos
-          </div>
+            {label || id}
+          </span>
         );
       }
 
-      const width = 680;
-      const height = 72;
-      const values = points.map((p) => p.price || 0);
-      const min = Math.min(...values);
-      const max = Math.max(...values);
-      const range = max - min || 1;
+      function getHistoryStats(product) {
+        const history = Array.isArray(product.history) ? product.history : [];
+        if (!history.length) {
+          return {
+            points: [],
+            latest: product.price || null,
+            yesterday: null,
+            weekAgo: null,
+            variancePct: null,
+            varianceCop: null,
+          };
+        }
 
-      const poly = points
-        .map((point, idx) => {
-          const x = (idx / (points.length - 1)) * (width - 8) + 4;
-          const y = height - (((point.price - min) / range) * (height - 10) + 5);
-          return `${x},${y}`;
-        })
-        .join(" ");
+        const points = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+        const latest = points[points.length - 1]?.price ?? product.price ?? null;
+        const yesterday = points.length >= 2 ? points[points.length - 2].price : null;
+        const weekAgo = points.length >= 8 ? points[points.length - 8].price : (points[0]?.price ?? null);
 
-      return (
-        <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 8, background: "#fbfdff" }}>
-          <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="72" preserveAspectRatio="none">
-            <polyline fill="none" stroke="var(--accent)" strokeWidth="2.2" points={poly} />
-          </svg>
-          <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text2)" }}>
-            <span>{points[0].date}</span>
-            <span>min {fmt(min)} • max {fmt(max)}</span>
-            <span>{points[points.length - 1].date}</span>
-          </div>
-        </div>
-      );
-    }
+        let varianceCop = null;
+        let variancePct = null;
+        if (latest != null && weekAgo != null) {
+          varianceCop = latest - weekAgo;
+          variancePct = weekAgo === 0 ? null : (varianceCop / weekAgo) * 100;
+        }
 
-    function ComparisonModal({ items, onClose, onRemove }) {
-      const prices = items.map((p) => p.price || 0);
-      const min = prices.length ? Math.min(...prices) : 0;
+        return { points, latest, yesterday, weekAgo, varianceCop, variancePct };
+      }
 
-      return (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,.45)",
-          zIndex: 80,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 18,
-        }} onClick={onClose}>
-          <div style={{
-            width: "min(1100px, 100%)",
-            maxHeight: "90vh",
-            overflowY: "auto",
-            background: "white",
-            borderRadius: 16,
-            border: "1px solid var(--border)",
-            boxShadow: "var(--shadow)",
-            padding: 16,
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Comparacion de productos</h3>
-              <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
-            </div>
-            <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
-              Puedes comparar hasta 4 articulos de la misma tienda o de tiendas distintas.
-            </p>
-
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(180px, 1fr))`,
-              gap: 12,
-            }}>
-              {items.map((item) => {
-                const stats = getHistoryStats(item);
-                const isCheapest = (item.price || 0) === min;
-                return (
-                  <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: isCheapest ? "var(--accent-light)" : "white" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-                      <StoreBadge id={item.store} label={item.store_name || item.store} />
-                      <button onClick={() => onRemove(item)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text2)", fontSize: 18 }}>×</button>
-                    </div>
-                    <h4 style={{ fontSize: 13, marginTop: 8, minHeight: 36 }}>{item.title}</h4>
-                    <p style={{ marginTop: 8, fontFamily: "Sora", fontWeight: 700, color: "var(--accent)", fontSize: 18 }}>{fmt(item.price)}</p>
-                    {isCheapest && <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Mas barato</p>}
-
-                    <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8, display: "grid", gap: 5 }}>
-                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
-                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Semana pasada: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
-                      <p style={{ fontSize: 12, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onCompare, onToggleMinimize }) {
-      // If minimized and there are items, show compact bar instead of full drawer
-      if (minimized && items && items.length > 0) {
+      function HistoryDelta({ varianceCop, variancePct }) {
+        const hasCop = varianceCop != null;
+        const isUp = hasCop ? varianceCop > 0 : false;
+        const isFlat = hasCop ? varianceCop === 0 : false;
+        const color = isFlat ? "var(--text2)" : isUp ? "#b42318" : "#067647";
+        const copPrefix = isFlat ? "=" : isUp ? "+" : "";
         return (
-          <aside style={{
+          <span style={{ fontSize: 12, color, fontWeight: 700 }}>
+            {hasCop ? `${copPrefix}${fmt(varianceCop)}` : "N/D"}
+            {variancePct == null ? "" : ` (${isFlat ? "=" : isUp ? "+" : ""}${variancePct.toFixed(2)}%)`}
+          </span>
+        );
+      }
+
+      function Card({ product, selected, onToggleSelect }) {
+        const stats = getHistoryStats(product);
+        return (
+          <article
+            onClick={() => onToggleSelect(product)}
+            className="product-card"
+            style={{
+              background: "var(--surface)",
+              border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              boxShadow: "var(--shadow)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              cursor: "pointer",
+              transition: "transform .2s, box-shadow .2s",
+            }}
+          >
+            <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f5f5f5" }}>
+              <img src={product.img || ""} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+            <div style={{ padding: "10px 9px", display: "flex", flexDirection: "column", flex: 1 }}>
+              <StoreBadge id={product.store} label={product.store_name || product.store} />
+              <h4 style={{ marginTop: 6, fontSize: 13, fontWeight: 600, minHeight: 32, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                {product.title}
+              </h4>
+              <p style={{ marginTop: "auto", fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>
+                {fmt(product.price)}
+              </p>
+              {stats.variancePct != null && (
+                <p style={{ marginTop: 4, fontSize: 12, color: stats.variancePct > 0 ? "#b42318" : "#067647" }}>
+                  {stats.variancePct > 0 ? "↑" : "↓"} {Math.abs(stats.variancePct).toFixed(1)}% vs semana pasada
+                </p>
+              )}
+            </div>
+          </article>
+        );
+      }
+
+      function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onToggleMinimize }) {
+        if (minimized && items && items.length > 0) {
+          return (
+            <aside style={{
+              position: "fixed",
+              top: 88,
+              right: 14,
+              width: 220,
+              height: 56,
+              overflow: "hidden",
+              background: "white",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              boxShadow: "var(--shadow)",
+              zIndex: 60,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 10px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+                <strong style={{ fontFamily: "Sora", fontSize: 13 }}>{items.length}/4</strong>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {items.slice(0, 3).map((it) => (
+                    <img key={it.id} src={it.img || ""} alt={it.title} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }} />
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => onToggleMinimize(false)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, padding: "6px 8px", cursor: "pointer" }}>▸</button>
+            </aside>
+          );
+        }
+
+        return (
+          <aside className={open ? "drawer-enter" : "drawer-exit"} style={{
             position: "fixed",
             top: 88,
             right: 14,
-            width: 220,
-            height: 56,
-            overflow: "hidden",
+            width: 320,
+            maxHeight: "calc(100vh - 104px)",
+            overflowY: "auto",
             background: "white",
             border: "1px solid var(--border)",
-            borderRadius: 12,
+            borderRadius: 14,
             boxShadow: "var(--shadow)",
-            zIndex: 60,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "8px 10px",
+            zIndex: 40,
+            transition: "transform .24s ease, opacity .24s ease",
+            display: "grid",
+            gridTemplateRows: "auto 1fr auto",
           }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
-              <strong style={{ fontFamily: "Sora", fontSize: 13 }}>{items.length}/4</strong>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
-                {items.slice(0, 3).map((it) => (
-                  <img key={it.id} src={it.img || ""} alt={it.title} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />
-                ))}
+            <div style={{ padding: 12, borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ fontFamily: "Sora", fontSize: 14, fontWeight: 700 }}>Selección para comparar</p>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>{items.length}/4 artículos</p>
               </div>
+              <button onClick={() => onToggleMinimize(true)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}>▸</button>
             </div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button onClick={() => onToggleMinimize(false)} title="Expandir" style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, padding: "6px 8px", cursor: "pointer" }}>▸</button>
+
+            <div style={{ padding: 10, display: "grid", gap: 8 }}>
+              {items.length ? items.map((item) => (
+                <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                  <div>
+                    <StoreBadge id={item.store} label={item.store_name || item.store} />
+                    <p style={{ fontSize: 12, marginTop: 5 }}>{item.title}</p>
+                    <p style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginTop: 3 }}>{fmt(item.price)}</p>
+                  </div>
+                  <button onClick={() => onRemove(item)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", width: 26, height: 26 }}>×</button>
+                </div>
+              )) : (
+                <div style={{ fontSize: 12, color: "var(--text2)", padding: 10 }}>Haz click en tarjetas para comparar</div>
+              )}
+            </div>
+
+            <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
+              <button
+                disabled={items.length < 2}
+                onClick={() => setShowComparisonModal(true)}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: 10,
+                  fontWeight: 700,
+                  cursor: items.length >= 2 ? "pointer" : "not-allowed",
+                  background: items.length >= 2 ? "var(--accent)" : "#d0d5dd",
+                  color: "white",
+                }}
+              >
+                Ver Comparación
+              </button>
             </div>
           </aside>
         );
       }
 
       return (
-        <aside className={open ? "drawer-enter" : "drawer-exit"} style={{
-          position: "fixed",
-          top: 88,
-          right: 14,
-          width: 320,
-          maxHeight: "calc(100vh - 104px)",
-          overflowY: "auto",
-          background: "white",
-          border: "1px solid var(--border)",
-          borderRadius: 14,
-          boxShadow: "var(--shadow)",
-          zIndex: 40,
-          transition: "transform .24s ease, opacity .24s ease",
-          display: "grid",
-          gridTemplateRows: "auto 1fr auto",
-        }}>
-            <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <div>
-              <p style={{ fontFamily: "Sora", fontSize: 14, fontWeight: 700 }}>Seleccion para comparar</p>
-              <p style={{ fontSize: 11, color: "var(--text2)" }}>{items.length}/4 articulos</p>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <button onClick={onClear} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "5px 8px" }}>
-                Limpiar
-              </button>
-              <button onClick={() => onToggleMinimize(true)} title="Minimizar" style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 12, padding: "6px 8px" }}>
-                ▸
-              </button>
-            </div>
-          </div>
-
-          <div style={{ padding: 10, display: "grid", gap: 8 }}>
-            {items.length ? items.map((item) => (
-              <div key={item.id} style={{
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-                padding: "8px 9px",
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 8,
-                alignItems: "start",
-              }}>
-                <div style={{ minWidth: 0 }}>
-                  <StoreBadge id={item.store} label={item.store_name || item.store} />
-                  <p style={{ fontSize: 12, fontWeight: 600, marginTop: 5, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.title}</p>
-                  <p style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginTop: 3 }}>{fmt(item.price)}</p>
-                </div>
+        <div style={{ minHeight: "100vh", display: "grid", gridTemplateRows: "auto 1fr" }}>
+          <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
+            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div>
+                <h1 style={{ fontFamily: "Sora", fontSize: 20, fontWeight: 700 }}>LicorScan</h1>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span className={`data-source-badge ${dataSource}`}>
+                  {dataSource === "live" ? "🔴 Datos en vivo" : "💾 Datos cacheados"}
+                </span>
+                {loading && <span style={{ fontSize: 12, color: "var(--text2)" }}>Actualizando...</span>}
+              </div>
+              {selectedForComparison.length > 0 && (
                 <button
-                  onClick={() => onRemove(item)}
+                  onClick={() => setDrawerMinimized(!drawerMinimized)}
                   style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
                     border: "1px solid var(--border)",
                     background: "white",
+                    borderRadius: 8,
+                    padding: "8px 12px",
                     cursor: "pointer",
-                    color: "var(--text2)",
-                    fontSize: 16,
-                    lineHeight: 1,
-                    flexShrink: 0,
+                    fontSize: 12,
+                    fontWeight: 600,
                   }}
-                  title="Quitar"
                 >
-                  ×
+                  {selectedForComparison.length > 0 ? `${selectedForComparison.length} seleccionados` : "Buscar"}
                 </button>
-              </div>
-            )) : (
-              <div style={{ border: "1px dashed var(--border)", borderRadius: 10, padding: 10, fontSize: 12, color: "var(--text2)" }}>
-                Haz click en tarjetas para agregarlas a la comparacion.
-              </div>
-            )}
-          </div>
-
-          <div style={{ padding: 10, borderTop: "1px solid var(--border)", display: "flex", gap: 8 }}>
-            <button
-              disabled={items.length < 2}
-              onClick={onCompare}
-              style={{
-                flex: 1,
-                border: "none",
-                borderRadius: 10,
-                padding: "9px 10px",
-                fontSize: 13,
-                fontWeight: 700,
-                cursor: items.length >= 2 ? "pointer" : "not-allowed",
-                background: items.length >= 2 ? "var(--accent)" : "#d0d5dd",
-                color: "white",
-              }}
-            >
-              Comparar ahora
-            </button>
-          </div>
-        </aside>
-      );
-    }
-
-    function HistoryModal({ product, onClose }) {
-      const stats = getHistoryStats(product);
-      const pricing = getPricingContext(product);
-      const signalSummary = formatEventSignals(pricing.signals);
-      return (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,.45)",
-          zIndex: 75,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 18,
-        }} onClick={onClose}>
-          <div style={{
-            width: "min(760px, 100%)",
-            background: "white",
-            borderRadius: 16,
-            border: "1px solid var(--border)",
-            boxShadow: "var(--shadow)",
-            padding: 16,
-          }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Historico de precio</h3>
-              <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
-            </div>
-            <StoreBadge id={product.store} label={product.store_name || product.store} />
-            <h4 style={{ marginTop: 10, fontSize: 16 }}>{product.title}</h4>
-
-            <div style={{
-              marginTop: 14,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: 10,
-            }}>
-              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-                <p style={{ fontSize: 11, color: "var(--text2)" }}>Precio actual</p>
-                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.latest == null ? "N/D" : fmt(stats.latest)}</p>
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-                <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer</p>
-                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</p>
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-                <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana pasada</p>
-                <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</p>
-              </div>
-              <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
-                <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza</p>
-                <p><HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 6 }}>Tendencia de precio</p>
-              <Sparkline points={stats.points} />
-            </div>
-
-            <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "#fbfdff" }}>
-              <p style={{ fontSize: 11, color: "var(--text2)" }}>Lectura de descuento</p>
-              <p style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
-                {pricing.has_discount ? `Descuento estimado de ${pricing.discount_pct != null ? pricing.discount_pct.toFixed(2) : "0.00"}% sobre ${fmt(pricing.reference_price)}` : "Sin descuento claro en el historial observado"}
-              </p>
-              {pricing.discount_start && pricing.discount_observed_until ? (
-                <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>
-                  Detectado desde {pricing.discount_start} y vigente al menos hasta {pricing.discount_observed_until}.
-                </p>
-              ) : null}
-              {signalSummary ? <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>{signalSummary}</p> : null}
-            </div>
-
-            <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
-              <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>Registros disponibles ({stats.points.length})</p>
-              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
-                {stats.points.length ? stats.points.map((point) => (
-                  <div key={`${point.date}-${point.price}`} style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", borderTop: "1px solid var(--border)", fontSize: 13 }}>
-                    <span>{point.date}</span>
-                    <strong>{fmt(point.price)}</strong>
-                  </div>
-                )) : <div style={{ padding: 10, fontSize: 13, color: "var(--text2)" }}>No hay historial suficiente todavia.</div>}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    function Card({ product, selected, onToggleSelect, onOpenHistory }) {
-      const stats = getHistoryStats(product);
-      const pricing = getPricingContext(product);
-      const signalSummary = formatEventSignals(pricing.signals);
-      return (
-        <article
-          onClick={() => onToggleSelect(product)}
-          title="Click para seleccionar o quitar de comparación"
-          className="product-card"
-          style={{
-          background: "var(--surface)",
-          border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          boxShadow: "var(--shadow)",
-          position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          padding: 14,
-          gap: 10,
-          cursor: "pointer",
-          transition: "transform .15s ease, box-shadow .15s ease",
-        }}>
-          {selected && (
-            <span style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-              background: "var(--accent)",
-              color: "white",
-              borderRadius: 999,
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "4px 8px",
-              letterSpacing: ".2px",
-              zIndex: 2,
-            }}>
-              Seleccionado
-            </span>
-          )}
-          <div style={{
-            width: "100%",
-            aspectRatio: "1/1",
-            borderRadius: 10,
-            border: "1px solid var(--border)",
-            background: "#f8f8f8",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            overflow: "hidden",
-          }}>
-            {product.img ? (
-              <img src={product.img} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-            ) : (
-              <span style={{ fontSize: 12, color: "var(--text2)" }}>sin imagen</span>
-            )}
-          </div>
-
-          <StoreBadge id={product.store} label={product.store_name || product.store} />
-
-          <h3 style={{ fontSize: 14, lineHeight: 1.35, minHeight: 40 }}>{product.title}</h3>
-
-          <p style={{ fontSize: 12, color: "var(--text2)" }}>
-            {product.category || "Otros"}
-          </p>
-
-          <div style={{
-            marginTop: 4,
-            border: "1px solid var(--border)",
-            borderRadius: 10,
-            padding: 8,
-            background: "#fafafa",
-            display: "grid",
-            gap: 4,
-          }}>
-            <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
-            <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
-            <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
-            {pricing.has_discount ? <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Descuento: {pricing.discount_pct != null ? `${pricing.discount_pct.toFixed(2)}%` : "N/D"}</p> : null}
-            {signalSummary ? <p style={{ fontSize: 10, color: "var(--text2)" }}>{signalSummary}</p> : null}
-          </div>
-
-          <div style={{
-            marginTop: "auto",
-            paddingTop: 8,
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 8,
-          }}>
-            <strong style={{ fontFamily: "Sora", color: "var(--accent)", fontSize: 18 }}>{fmt(product.price)}</strong>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-              <button onClick={(e) => { e.stopPropagation(); onToggleSelect(product); }} style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: selected ? "white" : "var(--accent)",
-                background: selected ? "var(--accent)" : "white",
-                border: "1px solid var(--accent)",
-                borderRadius: 8,
-                padding: "5px 8px",
-                cursor: "pointer",
-              }}>{selected ? "Seleccionado" : "Comparar"}</button>
-              <button onClick={(e) => { e.stopPropagation(); onOpenHistory(product); }} style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "var(--text)",
-                background: "white",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                padding: "5px 8px",
-                cursor: "pointer",
-              }}>Historico</button>
-              <a href={product.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{
-                fontSize: 11,
-                fontWeight: 700,
-                color: "var(--accent)",
-                textDecoration: "none",
-                border: "1px solid var(--accent)",
-                borderRadius: 8,
-                padding: "5px 8px",
-              }}>Ver</a>
-            </div>
-          </div>
-        </article>
-      );
-    }
-
-    function App() {
-      const [query, setQuery] = useState("");
-      const [category, setCategory] = useState("Todos");
-      const [store, setStore] = useState("Todos");
-      const [maxPrice, setMaxPrice] = useState(() => {
-        const max = PRODUCTS.reduce((acc, item) => Math.max(acc, item.price || 0), 0);
-        return Math.max(max, 10000);
-      });
-      const [sort, setSort] = useState("relevance");
-      const [comparison, setComparison] = useState([]);
-      const [historyProduct, setHistoryProduct] = useState(null);
-      const [drawerOpen, setDrawerOpen] = useState(true);
-      const [drawerMinimized, setDrawerMinimized] = useState(false);
-
-      const categories = useMemo(() => {
-        const set = new Set(PRODUCTS.map((p) => p.category || "Otros"));
-        return ["Todos", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
-      }, []);
-
-      const stores = useMemo(() => {
-        const set = new Set(PRODUCTS.map((p) => p.store || "otros"));
-        return ["Todos", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
-      }, []);
-
-      const filtered = useMemo(() => {
-        let rows = PRODUCTS;
-        if (query.trim()) {
-          const q = query.toLowerCase();
-          rows = rows.filter((p) => (p.title || "").toLowerCase().includes(q));
-        }
-        if (category !== "Todos") {
-          rows = rows.filter((p) => (p.category || "Otros") === category);
-        }
-        if (store !== "Todos") {
-          rows = rows.filter((p) => p.store === store);
-        }
-        rows = rows.filter((p) => (p.price || 0) <= maxPrice);
-
-        if (sort === "price_asc") rows = [...rows].sort((a, b) => a.price - b.price);
-        if (sort === "price_desc") rows = [...rows].sort((a, b) => b.price - a.price);
-        return rows;
-      }, [query, category, store, maxPrice, sort]);
-
-      const maxAvailable = PRODUCTS.reduce((acc, item) => Math.max(acc, item.price || 0), 0);
-
-      const comparisonWarning = useMemo(() => {
-        if (comparison.length < 2) return "";
-        const categories = new Set(comparison.map((item) => item.category || "Otros"));
-        return categories.size > 1 ? "Recomendacion: compara productos del mismo tipo/categoria para mejor lectura." : "";
-      }, [comparison]);
-
-      const toggleCompare = (product) => {
-        setComparison((prev) => {
-          const exists = prev.some((item) => item.id === product.id);
-          if (exists) return prev.filter((item) => item.id !== product.id);
-          if (prev.length >= 4) return prev;
-          return [...prev, product];
-        });
-        // Do not force-open the drawer if user chose minimized mode
-        if (!drawerMinimized) setDrawerOpen(true);
-      };
-
-      return (
-        <div>
-          <header style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 10,
-            background: "white",
-            borderBottom: "1px solid var(--border)",
-          }}>
-            <div style={{ maxWidth: 1400, margin: "0 auto", padding: "14px 20px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-              <h1 style={{ fontFamily: "Sora", fontWeight: 800, fontSize: 24, marginRight: 8 }}>
-                Licor<span style={{ color: "var(--accent)" }}>Scan</span>
-              </h1>
-
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscar producto..."
-                style={{
-                  minWidth: 220,
-                  flex: 1,
-                  border: "1.5px solid var(--border)",
-                  borderRadius: 10,
-                  padding: "9px 12px",
-                  background: "var(--bg)",
-                }}
-              />
-
-              <select value={store} onChange={(e) => setStore(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
-                {stores.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-
-              <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
-                {categories.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-
-              <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ border: "1.5px solid var(--border)", borderRadius: 10, padding: "9px 10px" }}>
-                <option value="relevance">Relevancia</option>
-                <option value="price_asc">Precio: menor a mayor</option>
-                <option value="price_desc">Precio: mayor a menor</option>
-              </select>
+              )}
             </div>
           </header>
 
-          <main style={{ maxWidth: 1400, margin: "0 auto", padding: "20px" }}>
-            <div style={{ marginBottom: 14, color: "var(--text2)", fontSize: 14 }}>
-              <strong style={{ color: "var(--text)" }}>{filtered.length}</strong> productos
-              {CATALOG.generated_at ? ` • catálogo generado ${new Date(CATALOG.generated_at).toLocaleString("es-CO")}` : ""}
-            </div>
-
-            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <button
-                disabled={comparison.length < 2}
-                onClick={() => setHistoryProduct({ __compare_mode: true })}
-                style={{
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "8px 12px",
-                  fontWeight: 700,
-                  cursor: comparison.length >= 2 ? "pointer" : "not-allowed",
-                  background: comparison.length >= 2 ? "var(--accent)" : "#d0d5dd",
-                  color: "white",
-                }}
-              >
-                Comparar seleccion ({comparison.length}/4)
-              </button>
-              <button
-                onClick={() => setComparison([])}
-                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
-              >
-                Limpiar seleccion
-              </button>
-              <button
-                onClick={() => setDrawerOpen((prev) => !prev)}
-                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
-              >
-                {drawerOpen ? "Ocultar barra" : "Mostrar barra"}
-              </button>
-              <button
-                onClick={() => setDrawerMinimized((prev) => !prev)}
-                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
-              >
-                {drawerMinimized ? "Expandir barra" : "Minimizar barra"}
-              </button>
-              {comparisonWarning ? <span style={{ fontSize: 12, color: "#b54708" }}>{comparisonWarning}</span> : null}
-            </div>
-
-            <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 13, color: "var(--text2)" }}>Precio máximo:</span>
-              <input type="range" min={0} max={Math.max(maxAvailable, 10000)} step={500} value={maxPrice} onChange={(e) => setMaxPrice(+e.target.value)} style={{ width: 240 }} />
-              <strong style={{ color: "var(--accent)" }}>{fmt(maxPrice)}</strong>
-            </div>
-
-            {filtered.length ? (
-              <section style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))",
-                gap: 16,
-              }}>
-                {filtered.map((item) => (
-                  <Card
-                    key={item.id}
-                    product={item}
-                    selected={comparison.some((entry) => entry.id === item.id)}
-                    onToggleSelect={toggleCompare}
-                    onOpenHistory={setHistoryProduct}
-                  />
-                ))}
-              </section>
-            ) : (
-              <div style={{
-                padding: "42px 18px",
-                background: "white",
-                border: "1px solid var(--border)",
-                borderRadius: 14,
-                textAlign: "center",
-                color: "var(--text2)",
-              }}>
-                Sin resultados con los filtros actuales.
+          <main style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, maxWidth: 1400, margin: "0 auto", padding: 14, width: "100%" }}>
+            <div>
+              <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar productos..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                />
+                <select
+                  value={selectedStore}
+                  onChange={(e) => setSelectedStore(e.target.value)}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                >
+                  <option value="">Todas las tiendas ({products.length})</option>
+                  {uniqueStores.map((store) => (
+                    <option key={store} value={store}>
+                      {store} ({products.filter((p) => p.store === store).length})
+                    </option>
+                  ))}
+                </select>
               </div>
-            )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                {filteredProducts.length ? (
+                  filteredProducts.map((product) => (
+                    <Card
+                      key={product.id}
+                      product={product}
+                      selected={selectedForComparison.some((p) => p.id === product.id)}
+                      onToggleSelect={toggleCompare}
+                    />
+                  ))
+                ) : (
+                  <div style={{ gridColumn: "1 / -1", padding: 40, textAlign: "center", color: "var(--text2)" }}>
+                    No se encontraron productos
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <ComparisonDrawer
+              items={selectedForComparison}
+              open={showComparisonModal}
+              minimized={drawerMinimized}
+              onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
+              onToggleMinimize={setDrawerMinimized}
+            />
           </main>
-
-          {historyProduct && historyProduct.__compare_mode && (
-            <ComparisonModal
-              items={comparison}
-              onClose={() => setHistoryProduct(null)}
-              onRemove={(item) => setComparison((prev) => prev.filter((entry) => entry.id !== item.id))}
-            />
-          )}
-          {historyProduct && !historyProduct.__compare_mode && (
-            <HistoryModal
-              product={historyProduct}
-              onClose={() => setHistoryProduct(null)}
-            />
-          )}
-
-          <ComparisonDrawer
-            items={comparison}
-            open={drawerOpen && comparison.length > 0}
-            minimized={drawerMinimized}
-            onToggleMinimize={(v) => setDrawerMinimized(Boolean(v))}
-            onRemove={(item) => setComparison((prev) => prev.filter((entry) => entry.id !== item.id))}
-            onClear={() => setComparison([])}
-            onCompare={() => setHistoryProduct({ __compare_mode: true })}
-          />
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+    ReactDOM.render(<App />, document.getElementById("root"));
   </script>
 </body>
 </html>
