@@ -208,6 +208,32 @@
         );
       }
 
+      function getPricingContext(product) {
+        const history = Array.isArray(product.history) ? product.history : [];
+        const signals = [];
+        
+        if (history.length >= 2) {
+          const latest = history[history.length - 1]?.price ?? product.price;
+          const previous = history[history.length - 2]?.price ?? latest;
+          
+          if (latest < previous) {
+            signals.push("📉 Bajada de precio");
+          }
+          if (product.discount) {
+            signals.push("🏷️ En descuento");
+          }
+        }
+        
+        return { signals };
+      }
+
+      function formatEventSignals(signals) {
+        if (!Array.isArray(signals) || signals.length === 0) {
+          return null;
+        }
+        return signals.join(" • ");
+      }
+
       function Card({ product, selected, onToggleSelect, onOpenHistory }) {
         const stats = getHistoryStats(product);
         const pricing = getPricingContext(product);
