@@ -10,6 +10,6 @@
     "dev": "python -m http.server 3000 --directory frontend"
   },
   "engines": {
-    "node": "18.x"
+    "node": "24.x"
   }
 }
