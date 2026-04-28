@@ -198,6 +198,57 @@ Asi evitamos alta carga de lectura sobre la BD y mantenemos baja latencia.
 
 Este scraper respeta las políticas de rate limiting del DTD:
 - Delays de 8-12s entre requests según tienda.
+
+## Subir catálogo a Supabase
+
+Si quieres persistir el catálogo en Supabase, estos pasos te ayudan a empezar.
+
+1. Crea un proyecto en https://app.supabase.com/.
+
+2. Aplica el esquema SQL del repo en la consola SQL de Supabase usando este archivo:
+
+```text
+supabase/migrations/20260428_init.sql
+```
+
+Si prefieres, pega su contenido en el SQL Editor de Supabase y ejecútalo. Eso crea la tabla `products`, índices y políticas básicas.
+
+3. Si quieres hacerlo manualmente, este es el esquema mínimo:
+
+```sql
+create table products (
+   id text primary key,
+   store text,
+   store_name text,
+   title text,
+   price numeric,
+   img text,
+   url text,
+   category text,
+   pricing_context jsonb,
+   history jsonb,
+   raw jsonb
+);
+```
+
+4. Añade las credenciales en un fichero `.env` en la raíz del repositorio:
+
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=eyJ...your_service_role_or_anon_key
+```
+
+5. Instala dependencias y ejecuta el script que sube el `catalog-data.js` generado:
+
+```bash
+pip install -r requirements.txt
+python scripts/upload_to_supabase.py --catalog frontend/catalog-data.js
+```
+
+El script hace `upsert` por `id`. Revisa el esquema y adapta columnas si necesitas otras propiedades.
+
+Nota: si en Supabase no ves nada, normalmente es porque todavía no se ejecutó el SQL de migración. La tabla no aparece sola solo por tener el código en GitHub.
+
 - Horario objetivo de producción: 02:00–05:00 GMT-5.
 - Rotación de User-Agent desde un pool de navegadores realistas.
 - Solo se extraen datos públicos (nombre y precio).

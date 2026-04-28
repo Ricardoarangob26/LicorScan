@@ -260,7 +260,42 @@
       );
     }
 
-    function ComparisonDrawer({ items, open, onRemove, onClear, onCompare }) {
+    function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onCompare, onToggleMinimize }) {
+      // If minimized and there are items, show compact bar instead of full drawer
+      if (minimized && items && items.length > 0) {
+        return (
+          <aside style={{
+            position: "fixed",
+            top: 88,
+            right: 14,
+            width: 220,
+            height: 56,
+            overflow: "hidden",
+            background: "white",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            boxShadow: "var(--shadow)",
+            zIndex: 60,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "8px 10px",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+              <strong style={{ fontFamily: "Sora", fontSize: 13 }}>{items.length}/4</strong>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", overflow: "hidden", whiteSpace: "nowrap" }}>
+                {items.slice(0, 3).map((it) => (
+                  <img key={it.id} src={it.img || ""} alt={it.title} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6, border: "1px solid var(--border)" }} />
+                ))}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <button onClick={() => onToggleMinimize(false)} title="Expandir" style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, padding: "6px 8px", cursor: "pointer" }}>▸</button>
+            </div>
+          </aside>
+        );
+      }
+
       return (
         <aside className={open ? "drawer-enter" : "drawer-exit"} style={{
           position: "fixed",
@@ -278,14 +313,19 @@
           display: "grid",
           gridTemplateRows: "auto 1fr auto",
         }}>
-          <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ padding: "12px 12px 10px", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <div>
               <p style={{ fontFamily: "Sora", fontSize: 14, fontWeight: 700 }}>Seleccion para comparar</p>
               <p style={{ fontSize: 11, color: "var(--text2)" }}>{items.length}/4 articulos</p>
             </div>
-            <button onClick={onClear} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "5px 8px" }}>
-              Limpiar
-            </button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <button onClick={onClear} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 700, padding: "5px 8px" }}>
+                Limpiar
+              </button>
+              <button onClick={() => onToggleMinimize(true)} title="Minimizar" style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", fontSize: 12, padding: "6px 8px" }}>
+                ▸
+              </button>
+            </div>
           </div>
 
           <div style={{ padding: 10, display: "grid", gap: 8 }}>
@@ -580,6 +620,7 @@
       const [comparison, setComparison] = useState([]);
       const [historyProduct, setHistoryProduct] = useState(null);
       const [drawerOpen, setDrawerOpen] = useState(true);
+      const [drawerMinimized, setDrawerMinimized] = useState(false);
 
       const categories = useMemo(() => {
         const set = new Set(PRODUCTS.map((p) => p.category || "Otros"));
@@ -625,7 +666,8 @@
           if (prev.length >= 4) return prev;
           return [...prev, product];
         });
-        setDrawerOpen(true);
+        // Do not force-open the drawer if user chose minimized mode
+        if (!drawerMinimized) setDrawerOpen(true);
       };
 
       return (
@@ -706,6 +748,12 @@
               >
                 {drawerOpen ? "Ocultar barra" : "Mostrar barra"}
               </button>
+              <button
+                onClick={() => setDrawerMinimized((prev) => !prev)}
+                style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "8px 12px", background: "white", cursor: "pointer", fontWeight: 600 }}
+              >
+                {drawerMinimized ? "Expandir barra" : "Minimizar barra"}
+              </button>
               {comparisonWarning ? <span style={{ fontSize: 12, color: "#b54708" }}>{comparisonWarning}</span> : null}
             </div>
 
@@ -762,6 +810,8 @@
           <ComparisonDrawer
             items={comparison}
             open={drawerOpen && comparison.length > 0}
+            minimized={drawerMinimized}
+            onToggleMinimize={(v) => setDrawerMinimized(Boolean(v))}
             onRemove={(item) => setComparison((prev) => prev.filter((entry) => entry.id !== item.id))}
             onClear={() => setComparison([])}
             onCompare={() => setHistoryProduct({ __compare_mode: true })}
