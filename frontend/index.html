@@ -208,46 +208,127 @@
         );
       }
 
-      function Card({ product, selected, onToggleSelect }) {
+      function Card({ product, selected, onToggleSelect, onOpenHistory }) {
         const stats = getHistoryStats(product);
+        const pricing = getPricingContext(product);
+        const signalSummary = formatEventSignals(pricing.signals);
         return (
           <article
             onClick={() => onToggleSelect(product)}
+            title="Click para seleccionar o quitar de comparación"
             className="product-card"
             style={{
               background: "var(--surface)",
               border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
               borderRadius: "var(--radius)",
               boxShadow: "var(--shadow)",
+              position: "relative",
               display: "flex",
               flexDirection: "column",
-              overflow: "hidden",
+              padding: 14,
+              gap: 10,
               cursor: "pointer",
-              transition: "transform .2s, box-shadow .2s",
+              transition: "transform .15s ease, box-shadow .15s ease",
             }}
           >
-            <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f5f5f5" }}>
-              <img src={product.img || ""} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            </div>
-            <div style={{ padding: "10px 9px", display: "flex", flexDirection: "column", flex: 1 }}>
-              <StoreBadge id={product.store} label={product.store_name || product.store} />
-              <h4 style={{ marginTop: 6, fontSize: 13, fontWeight: 600, minHeight: 32, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                {product.title}
-              </h4>
-              <p style={{ marginTop: "auto", fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>
-                {fmt(product.price)}
-              </p>
-              {stats.variancePct != null && (
-                <p style={{ marginTop: 4, fontSize: 12, color: stats.variancePct > 0 ? "#b42318" : "#067647" }}>
-                  {stats.variancePct > 0 ? "↑" : "↓"} {Math.abs(stats.variancePct).toFixed(1)}% vs semana pasada
-                </p>
+            {selected && (
+              <span style={{
+                position: "absolute",
+                top: 8,
+                left: 8,
+                background: "var(--accent)",
+                color: "white",
+                borderRadius: 999,
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "4px 8px",
+                letterSpacing: ".2px",
+                zIndex: 2,
+              }}>
+                Seleccionado
+              </span>
+            )}
+            <div style={{
+              width: "100%",
+              aspectRatio: "1/1",
+              borderRadius: 10,
+              border: "1px solid var(--border)",
+              background: "#f8f8f8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+            }}>
+              {product.img ? (
+                <img src={product.img} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : (
+                <span style={{ fontSize: 12, color: "var(--text2)" }}>sin imagen</span>
               )}
+            </div>
+
+            <StoreBadge id={product.store} label={product.store_name || product.store} />
+
+            <h3 style={{ fontSize: 14, lineHeight: 1.35, minHeight: 40 }}>{product.title}</h3>
+
+            <p style={{ fontSize: 12, color: "var(--text2)" }}>
+              {product.category || "Otros"}
+            </p>
+
+            <div style={{
+              marginTop: 4,
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: 8,
+              background: "#fafafa",
+              display: "grid",
+              gap: 4,
+            }}>
+              <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
+              <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
+              <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+              {pricing.has_discount ? <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Descuento: {pricing.discount_pct != null ? `${pricing.discount_pct.toFixed(2)}%` : "N/D"}</p> : null}
+              {signalSummary ? <p style={{ fontSize: 10, color: "var(--text2)" }}>{signalSummary}</p> : null}
+            </div>
+
+            <div style={{ marginTop: "auto", paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <strong style={{ fontFamily: "Sora", color: "var(--accent)", fontSize: 18 }}>{fmt(product.price)}</strong>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                <button onClick={(e) => { e.stopPropagation(); onToggleSelect(product); }} style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: selected ? "white" : "var(--accent)",
+                  background: selected ? "var(--accent)" : "white",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 8,
+                  padding: "5px 8px",
+                  cursor: "pointer",
+                }}>{selected ? "Seleccionado" : "Comparar"}</button>
+                <button onClick={(e) => { e.stopPropagation(); onOpenHistory(product); }} style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--text)",
+                  background: "white",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  padding: "5px 8px",
+                  cursor: "pointer",
+                }}>Historico</button>
+                <a href={product.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--accent)",
+                  textDecoration: "none",
+                  border: "1px solid var(--accent)",
+                  borderRadius: 8,
+                  padding: "5px 8px",
+                }}>Ver</a>
+              </div>
             </div>
           </article>
         );
       }
 
-      function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onToggleMinimize }) {
+      function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onCompare, onToggleMinimize }) {
         if (minimized && items && items.length > 0) {
           return (
             <aside style={{
@@ -323,7 +404,7 @@
             <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
               <button
                 disabled={items.length < 2}
-                onClick={() => setShowComparisonModal(true)}
+                onClick={onCompare}
                 style={{
                   width: "100%",
                   border: "none",
@@ -339,6 +420,159 @@
               </button>
             </div>
           </aside>
+        );
+      }
+
+      function ComparisonModal({ items, onClose, onRemove }) {
+        const prices = items.map((p) => p.price || 0);
+        const min = prices.length ? Math.min(...prices) : 0;
+
+        return (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.45)",
+            zIndex: 80,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }} onClick={onClose}>
+            <div style={{
+              width: "min(1100px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              background: "white",
+              borderRadius: 16,
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
+              padding: 16,
+            }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Comparacion de productos</h3>
+                <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
+              </div>
+              <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
+                Puedes comparar hasta 4 articulos de la misma tienda o de tiendas distintas.
+              </p>
+
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(180px, 1fr))`,
+                gap: 12,
+              }}>
+                {items.map((item) => {
+                  const stats = getHistoryStats(item);
+                  const isCheapest = (item.price || 0) === min;
+                  return (
+                    <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: isCheapest ? "var(--accent-light)" : "white" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                        <StoreBadge id={item.store} label={item.store_name || item.store} />
+                        <button onClick={() => onRemove(item)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text2)", fontSize: 18 }}>×</button>
+                      </div>
+                      <h4 style={{ fontSize: 13, marginTop: 8, minHeight: 36 }}>{item.title}</h4>
+                      <p style={{ marginTop: 8, fontFamily: "Sora", fontWeight: 700, color: "var(--accent)", fontSize: 18 }}>{fmt(item.price)}</p>
+                      {isCheapest && <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Mas barato</p>}
+
+                      <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8, display: "grid", gap: 5 }}>
+                        <p style={{ fontSize: 12, color: "var(--text2)" }}>Ayer: <strong style={{ color: "var(--text)" }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</strong></p>
+                        <p style={{ fontSize: 12, color: "var(--text2)" }}>Semana pasada: <strong style={{ color: "var(--text)" }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</strong></p>
+                        <p style={{ fontSize: 12, color: "var(--text2)" }}>Varianza: <HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function HistoryModal({ product, onClose }) {
+        const stats = getHistoryStats(product);
+        const pricing = getPricingContext(product);
+        const signalSummary = formatEventSignals(pricing.signals);
+        return (
+          <div style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,.45)",
+            zIndex: 75,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 18,
+          }} onClick={onClose}>
+            <div style={{
+              width: "min(760px, 100%)",
+              background: "white",
+              borderRadius: 16,
+              border: "1px solid var(--border)",
+              boxShadow: "var(--shadow)",
+              padding: 16,
+            }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <h3 style={{ fontFamily: "Sora", fontSize: 20 }}>Historico de precio</h3>
+                <button onClick={onClose} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 24, lineHeight: 1 }}>×</button>
+              </div>
+              <StoreBadge id={product.store} label={product.store_name || product.store} />
+              <h4 style={{ marginTop: 10, fontSize: 16 }}>{product.title}</h4>
+
+              <div style={{
+                marginTop: 14,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: 10,
+              }}>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                  <p style={{ fontSize: 11, color: "var(--text2)" }}>Precio actual</p>
+                  <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.latest == null ? "N/D" : fmt(stats.latest)}</p>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                  <p style={{ fontSize: 11, color: "var(--text2)" }}>Ayer</p>
+                  <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.yesterday == null ? "N/D" : fmt(stats.yesterday)}</p>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                  <p style={{ fontSize: 11, color: "var(--text2)" }}>Semana pasada</p>
+                  <p style={{ fontFamily: "Sora", fontWeight: 700 }}>{stats.weekAgo == null ? "N/D" : fmt(stats.weekAgo)}</p>
+                </div>
+                <div style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 10 }}>
+                  <p style={{ fontSize: 11, color: "var(--text2)" }}>Varianza</p>
+                  <p><HistoryDelta varianceCop={stats.varianceCop} variancePct={stats.variancePct} /></p>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 6 }}>Tendencia de precio</p>
+                <Sparkline points={stats.points} />
+              </div>
+
+              <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "#fbfdff" }}>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>Lectura de descuento</p>
+                <p style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
+                  {pricing.has_discount ? `Descuento estimado de ${pricing.discount_pct != null ? pricing.discount_pct.toFixed(2) : "0.00"}% sobre ${fmt(pricing.reference_price)}` : "Sin descuento claro en el historial observado"}
+                </p>
+                {pricing.discount_start && pricing.discount_observed_until ? (
+                  <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>
+                    Detectado desde {pricing.discount_start} y vigente al menos hasta {pricing.discount_observed_until}.
+                  </p>
+                ) : null}
+                {signalSummary ? <p style={{ marginTop: 4, fontSize: 12, color: "var(--text2)" }}>{signalSummary}</p> : null}
+              </div>
+
+              <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+                <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 8 }}>Registros disponibles ({stats.points.length})</p>
+                <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid var(--border)", borderRadius: 10 }}>
+                  {stats.points.length ? stats.points.map((point) => (
+                    <div key={`${point.date}-${point.price}`} style={{ display: "flex", justifyContent: "space-between", padding: "8px 10px", borderTop: "1px solid var(--border)", fontSize: 13 }}>
+                      <span>{point.date}</span>
+                      <strong>{fmt(point.price)}</strong>
+                    </div>
+                  )) : <div style={{ padding: 10, fontSize: 13, color: "var(--text2)" }}>No hay historial suficiente todavia.</div>}
+                </div>
+              </div>
+            </div>
+          </div>
         );
       }
 
@@ -416,6 +650,7 @@
                       product={product}
                       selected={selectedForComparison.some((p) => p.id === product.id)}
                       onToggleSelect={toggleCompare}
+                      onOpenHistory={setShowHistoryModal}
                     />
                   ))
                 ) : (
@@ -426,11 +661,28 @@
               </div>
             </div>
 
+            {showComparisonModal && (
+              <ComparisonModal
+                items={selectedForComparison}
+                onClose={() => setShowComparisonModal(false)}
+                onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
+              />
+            )}
+
+            {showHistoryModal && (
+              <HistoryModal
+                product={showHistoryModal}
+                onClose={() => setShowHistoryModal(null)}
+              />
+            )}
+
             <ComparisonDrawer
               items={selectedForComparison}
               open={showComparisonModal}
               minimized={drawerMinimized}
               onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
+              onCompare={() => setShowComparisonModal(true)}
+              onClear={() => setSelectedForComparison([])}
               onToggleMinimize={setDrawerMinimized}
             />
           </main>
