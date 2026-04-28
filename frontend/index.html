@@ -76,15 +76,37 @@
 
     async function fetchProductsFromSupabase() {
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/products?limit=5000`, {
-          headers: {
-            apikey: SUPABASE_ANON,
-            Authorization: `Bearer ${SUPABASE_ANON}`,
-          },
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        return data;
+        let allProducts = [];
+        let offset = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const res = await fetch(
+            `${SUPABASE_URL}/rest/v1/products?limit=${pageSize}&offset=${offset}`,
+            {
+              headers: {
+                apikey: SUPABASE_ANON,
+                Authorization: `Bearer ${SUPABASE_ANON}`,
+              },
+            }
+          );
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          
+          if (!Array.isArray(data) || data.length === 0) {
+            hasMore = false;
+          } else {
+            allProducts = allProducts.concat(data);
+            if (data.length < pageSize) {
+              hasMore = false;
+            }
+            offset += pageSize;
+          }
+        }
+        
+        console.log(`Supabase fetched ${allProducts.length} products`);
+        return allProducts;
       } catch (error) {
         console.warn("Supabase fetch failed, using cached data:", error.message);
         return null;
