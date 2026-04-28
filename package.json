@@ -1,0 +1,15 @@
+{
+  "name": "licorscan-frontend",
+  "version": "1.0.0",
+  "description": "LicorScan - Product Comparison Platform",
+  "author": "LicorScan Team",
+  "license": "MIT",
+  "scripts": {
+    "build": "echo 'Frontend is static; ensuring catalog-data.js exists'",
+    "start": "python -m http.server 3000 --directory frontend",
+    "dev": "python -m http.server 3000 --directory frontend"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}

@@ -1,0 +1,47 @@
+# systemd Service and Timer for LicorScan
+# Location: /etc/systemd/system/
+
+[Unit]
+Description=LicorScan Scraper & Catalog Sync Job
+After=network-online.target
+Wants=network-online.target
+Documentation=https://github.com/Ricardoarangob26/LicorScan
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/LicorScan
+Environment="PATH=/opt/LicorScan/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin"
+
+# Main job: scrape, build catalog, upload to Supabase, push to GitHub
+ExecStart=/bin/bash -c ' \
+  source venv/bin/activate && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] Starting LicorScan job" >> /var/log/licorscan/scraper.log && \
+  py -3 -m scraper.main --store exito --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  py -3 -m scraper.main --store carulla --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  py -3 -m scraper.main --store olimpica --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] Building catalog..." >> /var/log/licorscan/scraper.log && \
+  py -3 build_front_catalog.py >> /var/log/licorscan/scraper.log 2>&1 && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] Uploading to Supabase..." >> /var/log/licorscan/scraper.log && \
+  py -3 scripts/upload_to_supabase.py >> /var/log/licorscan/scraper.log 2>&1 && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] Pushing to GitHub..." >> /var/log/licorscan/scraper.log && \
+  git add frontend/catalog-data.js && \
+  (git commit -m "Auto: Update catalog $(date +%Y-%m-%d_%H:%M)" || echo "No changes to commit") && \
+  git push origin main >> /var/log/licorscan/scraper.log 2>&1 && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] LicorScan job completed successfully" >> /var/log/licorscan/scraper.log \
+'
+
+StandardOutput=journal
+StandardError=journal
+StandardInput=null
+
+# Restart policy
+Restart=on-failure
+RestartSec=300
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

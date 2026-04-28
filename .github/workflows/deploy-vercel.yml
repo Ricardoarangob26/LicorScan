@@ -1,0 +1,30 @@
+name: Deploy to Vercel on Catalog Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/catalog-data.js'
+      - 'frontend/index.html'
+      - 'package.json'
+      - 'vercel.json'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Frontend to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        uses: vercel/action@main
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: '--prod'
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}

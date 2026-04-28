@@ -1,0 +1,24 @@
+# Vercel ignore file - files not needed for frontend deployment
+venv/
+.env
+.env.local
+.env.*.local
+*.pyc
+__pycache__/
+*.sqlite
+*.db
+scraper/
+data/
+tests/
+.git/
+.gitignore
+README.md
+DEPLOY.md
+requirements.txt
+build_front_catalog.py
+install_log.txt
+.DS_Store
+node_modules/
+.next/
+dist/
+build/

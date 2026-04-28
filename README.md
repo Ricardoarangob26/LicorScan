@@ -252,3 +252,115 @@ Nota: si en Supabase no ves nada, normalmente es porque todavía no se ejecutó 
 - Horario objetivo de producción: 02:00–05:00 GMT-5.
 - Rotación de User-Agent desde un pool de navegadores realistas.
 - Solo se extraen datos públicos (nombre y precio).
+
+---
+
+## Deployment
+
+### Frontend en Vercel
+
+El frontend (React CDN) está optimizado para deployment en **Vercel** con catálogo estático o dinámico desde Supabase.
+
+**Pasos rápidos:**
+
+1. **Preparar proyecto:** 
+   - `package.json` y `vercel.json` ya están incluidos.
+   - Confirma que `frontend/` existe con `index.html` y `catalog-data.js`.
+
+2. **Conectar a Vercel:**
+   - Registrarse en https://vercel.com
+   - Conectar tu repositorio GitHub
+   - Vercel auto-detecta `vercel.json` y despliega
+
+3. **Configurar variables de entorno en Vercel:**
+   - Ir a Project Settings → Environment Variables
+   - Añadir:
+     - `SUPABASE_URL`=`https://your-project.supabase.co`
+     - `SUPABASE_ANON`=`sb_publishable_...` (clave pública)
+
+4. **Deploy:**
+   - Push a `main`: `git push origin main`
+   - Vercel redeploya automáticamente
+   - Tu sitio está en: `https://your-project.vercel.app` (o dominio personalizado)
+
+**Detalles:** Ver [DEPLOY.md](DEPLOY.md)
+
+### Backend Automatizado en VM
+
+Para actualizar automáticamente el catálogo diariamente en producción:
+
+1. **Deployar la VM:**
+   - Provisionar Ubuntu 22.04+ en AWS EC2, DigitalOcean, GCP, etc.
+   - SSH y seguir [BACKEND_VM_SETUP.md](BACKEND_VM_SETUP.md)
+
+2. **Setup automático:**
+   - Clonar repo, crear venv, instalar dependencias
+   - Copiar archivos systemd (`licorscan.service`, `licorscan.timer`)
+   - Configurar `.env` con credenciales de Supabase y GitHub
+
+3. **Jobs diarios:**
+   - 02:00 GMT-5 (UTC 07:00): Ejecuta scraping (exito, carulla, olimpica)
+   - Genera catálogo: `build_front_catalog.py`
+   - Sube a Supabase: `scripts/upload_to_supabase.py`
+   - Auto-commit y push: GitHub → Vercel redeploy automático
+
+4. **Monitoreo:**
+   - Logs en `/var/log/licorscan/scraper.log`
+   - Systemd: `journalctl -u licorscan.service -f`
+
+**Detalles:** Ver [BACKEND_VM_SETUP.md](BACKEND_VM_SETUP.md)
+
+### CI/CD: GitHub Actions → Vercel
+
+Workflow automático cuando el catálogo se actualiza:
+
+1. Backend actualiza `frontend/catalog-data.js`
+2. Hace commit + push a `main`
+3. GitHub Actions detecta cambio (`.github/workflows/deploy-vercel.yml`)
+4. Redeploya frontend en Vercel automáticamente
+
+**Setup en GitHub:**
+- Ve a Settings → Secrets and variables → Actions
+- Añade:
+  - `VERCEL_TOKEN`: Token de Vercel (https://vercel.com/account/tokens)
+  - `VERCEL_ORG_ID`: ID de tu organización en Vercel
+  - `VERCEL_PROJECT_ID`: ID del proyecto en Vercel
+
+---
+
+## Arquitectura de Producción
+
+```
+┌─────────────────────────────────────────────────────┐
+│              VERCEL (Frontend)                       │
+│  • React CDN SPA (index.html)                        │
+│  • Catalog JSON (catalog-data.js)                    │
+│  • CDN cacheado + SSL                                │
+└────────────────────┬────────────────────────────────┘
+                     │ Fetch products
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│           SUPABASE (API + Base de datos)             │
+│  • Products table (2984+ items)                      │
+│  • REST API: /rest/v1/products                       │
+│  • RLS policies para lectura pública                 │
+└────────────────────┬────────────────────────────────┘
+                     │ API calls
+                     ▲
+┌───────────────────┼──────────────────────────────────┐
+│              BACKEND VM (Linux)                      │
+│  • Scraper: exito, carulla, olimpica               │
+│  • Build: catalog-data.js                           │
+│  • Upload: Supabase REST API                        │
+│  • Systemd timer: Diario 02:00 GMT-5                │
+│  • Auto-push: GitHub → Vercel redeploy              │
+└───────────────────┴──────────────────────────────────┘
+```
+
+**Data flow:**
+1. VM scraper descarga y parsea sitios
+2. Datos normalizados → `frontend/catalog-data.js`
+3. Script upload → Supabase via REST API
+4. Git commit + push
+5. GitHub Actions trigger → Vercel deploy
+6. Frontend (browser) carga desde Vercel y muestra datos

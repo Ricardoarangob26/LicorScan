@@ -1,0 +1,21 @@
+# systemd Timer for LicorScan
+# Location: /etc/systemd/system/
+
+[Unit]
+Description=LicorScan Daily Scraper Timer
+Documentation=https://github.com/Ricardoarangob26/LicorScan
+Requires=licorscan.service
+
+[Timer]
+# Run daily at 02:00 GMT-5 (which is UTC 07:00)
+# Adjust for your timezone by converting to UTC
+OnCalendar=*-*-* 07:00:00
+
+# Run if VM was off at scheduled time
+Persistent=true
+
+# Optional: add randomization to avoid exact hour
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
