@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LicorScan - Comparador de Precios</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="./catalog-data.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: oklch(97.5% 0.006 85);
+      --surface: #fff;
+      --border: oklch(88% 0.008 80);
+      --text: oklch(18% 0.01 260);
+      --text2: oklch(45% 0.01 260);
+      --accent: oklch(55% 0.2 250);
+      --accent-light: oklch(95% 0.06 245);
+      --radius: 14px;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
+    }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+    a { color: inherit; }
+    input, select, button { font-family: inherit; }
+    .product-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
+    }
+    .drawer-enter {
+      transform: translateX(0);
+      opacity: 1;
+    }
+    .drawer-exit {
+      transform: translateX(calc(100% + 12px));
+      opacity: 0;
+      pointer-events: none;
+    }
+    .data-source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .data-source-badge.live {
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .data-source-badge.cache {
+      background: #fef3c7;
+      color: #92400e;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useMemo, useState, useEffect } = React;
+
+    // Supabase config from env or fallback
+    const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://bwxxifwqnkrfbegoycod.supabase.co";
+    const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3eHhpZndxbmtyZmJlZ295Y29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTQzMjkzNDksImV4cCI6MTczOTkwNTM0OX0.3g_CcUcp3WI890zg0IGPeg_zI9j1QCq";
+
+    // Start with static catalog as fallback
+    const STATIC_CATALOG = window.__CATALOG__ || { products: [], generated_at: null };
+
+    async function fetchProductsFromSupabase() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/products?limit=5000`, {
+          headers: {
+            apikey: SUPABASE_ANON,
+            Authorization: `Bearer ${SUPABASE_ANON}`,
+          },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        return data;
+      } catch (error) {
+        console.warn("Supabase fetch failed, using cached data:", error.message);
+        return null;
+      }
+    }
+
+    function App() {
+      const [products, setProducts] = useState(STATIC_CATALOG.products || []);
+      const [dataSource, setDataSource] = useState("cache"); // "cache" or "live"
+      const [loading, setLoading] = useState(false);
+
+      // Load data on mount
+      useEffect(() => {
+        (async () => {
+          setLoading(true);
+          const sbData = await fetchProductsFromSupabase();
+          if (sbData && sbData.length > 0) {
+            setProducts(sbData);
+            setDataSource("live");
+          }
+          setLoading(false);
+        })();
+      }, []);
+
+      const [selectedForComparison, setSelectedForComparison] = useState([]);
+      const [showComparisonModal, setShowComparisonModal] = useState(false);
+      const [showHistoryModal, setShowHistoryModal] = useState(null);
+      const [searchQuery, setSearchQuery] = useState("");
+      const [selectedStore, setSelectedStore] = useState("");
+      const [drawerMinimized, setDrawerMinimized] = useState(false);
+
+      const STORE_COLORS = {
+        exito: "oklch(58% 0.18 145)",
+        d1: "oklch(52% 0.19 255)",
+        carulla: "oklch(55% 0.18 25)",
+        olimpica: "oklch(58% 0.2 310)",
+      };
+
+      const fmt = (value) => new Intl.NumberFormat("es-CO", {
+        style: "currency",
+        currency: "COP",
+        minimumFractionDigits: 0,
+      }).format(value || 0);
+
+      const filteredProducts = useMemo(() => {
+        return products.filter((p) => {
+          const matchSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchStore = !selectedStore || p.store === selectedStore;
+          return matchSearch && matchStore;
+        });
+      }, [products, searchQuery, selectedStore]);
+
+      const uniqueStores = [...new Set(products.map((p) => p.store))].sort();
+
+      const toggleCompare = (product) => {
+        if (selectedForComparison.find((p) => p.id === product.id)) {
+          setSelectedForComparison(selectedForComparison.filter((p) => p.id !== product.id));
+        } else if (selectedForComparison.length < 4) {
+          setSelectedForComparison([...selectedForComparison, product]);
+          if (!drawerMinimized) setShowComparisonModal(true);
+        }
+      };
+
+      function StoreBadge({ id, label }) {
+        return (
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            fontSize: 11,
+            fontWeight: 700,
+            color: "white",
+            background: STORE_COLORS[id] || "#666",
+            borderRadius: 999,
+            padding: "3px 9px",
+            letterSpacing: ".3px",
+          }}>
+            {label || id}
+          </span>
+        );
+      }
+
+      function getHistoryStats(product) {
+        const history = Array.isArray(product.history) ? product.history : [];
+        if (!history.length) {
+          return {
+            points: [],
+            latest: product.price || null,
+            yesterday: null,
+            weekAgo: null,
+            variancePct: null,
+            varianceCop: null,
+          };
+        }
+
+        const points = [...history].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+        const latest = points[points.length - 1]?.price ?? product.price ?? null;
+        const yesterday = points.length >= 2 ? points[points.length - 2].price : null;
+        const weekAgo = points.length >= 8 ? points[points.length - 8].price : (points[0]?.price ?? null);
+
+        let varianceCop = null;
+        let variancePct = null;
+        if (latest != null && weekAgo != null) {
+          varianceCop = latest - weekAgo;
+          variancePct = weekAgo === 0 ? null : (varianceCop / weekAgo) * 100;
+        }
+
+        return { points, latest, yesterday, weekAgo, varianceCop, variancePct };
+      }
+
+      function HistoryDelta({ varianceCop, variancePct }) {
+        const hasCop = varianceCop != null;
+        const isUp = hasCop ? varianceCop > 0 : false;
+        const isFlat = hasCop ? varianceCop === 0 : false;
+        const color = isFlat ? "var(--text2)" : isUp ? "#b42318" : "#067647";
+        const copPrefix = isFlat ? "=" : isUp ? "+" : "";
+        return (
+          <span style={{ fontSize: 12, color, fontWeight: 700 }}>
+            {hasCop ? `${copPrefix}${fmt(varianceCop)}` : "N/D"}
+            {variancePct == null ? "" : ` (${isFlat ? "=" : isUp ? "+" : ""}${variancePct.toFixed(2)}%)`}
+          </span>
+        );
+      }
+
+      function Card({ product, selected, onToggleSelect }) {
+        const stats = getHistoryStats(product);
+        return (
+          <article
+            onClick={() => onToggleSelect(product)}
+            className="product-card"
+            style={{
+              background: "var(--surface)",
+              border: selected ? "2px solid var(--accent)" : "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              boxShadow: "var(--shadow)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              cursor: "pointer",
+              transition: "transform .2s, box-shadow .2s",
+            }}
+          >
+            <div style={{ aspectRatio: "1/1", overflow: "hidden", background: "#f5f5f5" }}>
+              <img src={product.img || ""} alt={product.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            </div>
+            <div style={{ padding: "10px 9px", display: "flex", flexDirection: "column", flex: 1 }}>
+              <StoreBadge id={product.store} label={product.store_name || product.store} />
+              <h4 style={{ marginTop: 6, fontSize: 13, fontWeight: 600, minHeight: 32, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                {product.title}
+              </h4>
+              <p style={{ marginTop: "auto", fontSize: 16, fontWeight: 700, color: "var(--accent)" }}>
+                {fmt(product.price)}
+              </p>
+              {stats.variancePct != null && (
+                <p style={{ marginTop: 4, fontSize: 12, color: stats.variancePct > 0 ? "#b42318" : "#067647" }}>
+                  {stats.variancePct > 0 ? "↑" : "↓"} {Math.abs(stats.variancePct).toFixed(1)}% vs semana pasada
+                </p>
+              )}
+            </div>
+          </article>
+        );
+      }
+
+      function ComparisonDrawer({ items, open, minimized, onRemove, onClear, onToggleMinimize }) {
+        if (minimized && items && items.length > 0) {
+          return (
+            <aside style={{
+              position: "fixed",
+              top: 88,
+              right: 14,
+              width: 220,
+              height: 56,
+              overflow: "hidden",
+              background: "white",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              boxShadow: "var(--shadow)",
+              zIndex: 60,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "8px 10px",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1 }}>
+                <strong style={{ fontFamily: "Sora", fontSize: 13 }}>{items.length}/4</strong>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {items.slice(0, 3).map((it) => (
+                    <img key={it.id} src={it.img || ""} alt={it.title} style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 6 }} />
+                  ))}
+                </div>
+              </div>
+              <button onClick={() => onToggleMinimize(false)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, padding: "6px 8px", cursor: "pointer" }}>▸</button>
+            </aside>
+          );
+        }
+
+        return (
+          <aside className={open ? "drawer-enter" : "drawer-exit"} style={{
+            position: "fixed",
+            top: 88,
+            right: 14,
+            width: 320,
+            maxHeight: "calc(100vh - 104px)",
+            overflowY: "auto",
+            background: "white",
+            border: "1px solid var(--border)",
+            borderRadius: 14,
+            boxShadow: "var(--shadow)",
+            zIndex: 40,
+            transition: "transform .24s ease, opacity .24s ease",
+            display: "grid",
+            gridTemplateRows: "auto 1fr auto",
+          }}>
+            <div style={{ padding: 12, borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ fontFamily: "Sora", fontSize: 14, fontWeight: 700 }}>Selección para comparar</p>
+                <p style={{ fontSize: 11, color: "var(--text2)" }}>{items.length}/4 artículos</p>
+              </div>
+              <button onClick={() => onToggleMinimize(true)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", padding: "6px 8px" }}>▸</button>
+            </div>
+
+            <div style={{ padding: 10, display: "grid", gap: 8 }}>
+              {items.length ? items.map((item) => (
+                <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 8, display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+                  <div>
+                    <StoreBadge id={item.store} label={item.store_name || item.store} />
+                    <p style={{ fontSize: 12, marginTop: 5 }}>{item.title}</p>
+                    <p style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginTop: 3 }}>{fmt(item.price)}</p>
+                  </div>
+                  <button onClick={() => onRemove(item)} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, cursor: "pointer", width: 26, height: 26 }}>×</button>
+                </div>
+              )) : (
+                <div style={{ fontSize: 12, color: "var(--text2)", padding: 10 }}>Haz click en tarjetas para comparar</div>
+              )}
+            </div>
+
+            <div style={{ padding: 10, borderTop: "1px solid var(--border)" }}>
+              <button
+                disabled={items.length < 2}
+                onClick={() => setShowComparisonModal(true)}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: 10,
+                  fontWeight: 700,
+                  cursor: items.length >= 2 ? "pointer" : "not-allowed",
+                  background: items.length >= 2 ? "var(--accent)" : "#d0d5dd",
+                  color: "white",
+                }}
+              >
+                Ver Comparación
+              </button>
+            </div>
+          </aside>
+        );
+      }
+
+      return (
+        <div style={{ minHeight: "100vh", display: "grid", gridTemplateRows: "auto 1fr" }}>
+          <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
+            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+              <div>
+                <h1 style={{ fontFamily: "Sora", fontSize: 20, fontWeight: 700 }}>LicorScan</h1>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span className={`data-source-badge ${dataSource}`}>
+                  {dataSource === "live" ? "🔴 Datos en vivo" : "💾 Datos cacheados"}
+                </span>
+                {loading && <span style={{ fontSize: 12, color: "var(--text2)" }}>Actualizando...</span>}
+              </div>
+              {selectedForComparison.length > 0 && (
+                <button
+                  onClick={() => setDrawerMinimized(!drawerMinimized)}
+                  style={{
+                    border: "1px solid var(--border)",
+                    background: "white",
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}
+                >
+                  {selectedForComparison.length > 0 ? `${selectedForComparison.length} seleccionados` : "Buscar"}
+                </button>
+              )}
+            </div>
+          </header>
+
+          <main style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, maxWidth: 1400, margin: "0 auto", padding: 14, width: "100%" }}>
+            <div>
+              <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+                <input
+                  type="text"
+                  placeholder="Buscar productos..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                />
+                <select
+                  value={selectedStore}
+                  onChange={(e) => setSelectedStore(e.target.value)}
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                >
+                  <option value="">Todas las tiendas ({products.length})</option>
+                  {uniqueStores.map((store) => (
+                    <option key={store} value={store}>
+                      {store} ({products.filter((p) => p.store === store).length})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                {filteredProducts.length ? (
+                  filteredProducts.map((product) => (
+                    <Card
+                      key={product.id}
+                      product={product}
+                      selected={selectedForComparison.some((p) => p.id === product.id)}
+                      onToggleSelect={toggleCompare}
+                    />
+                  ))
+                ) : (
+                  <div style={{ gridColumn: "1 / -1", padding: 40, textAlign: "center", color: "var(--text2)" }}>
+                    No se encontraron productos
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <ComparisonDrawer
+              items={selectedForComparison}
+              open={showComparisonModal}
+              minimized={drawerMinimized}
+              onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
+              onToggleMinimize={setDrawerMinimized}
+            />
+          </main>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
