@@ -233,6 +233,11 @@
       function getPricingContext(product) {
         const history = Array.isArray(product.history) ? product.history : [];
         const signals = [];
+        let has_discount = false;
+        let discount_pct = 0;
+        let reference_price = product.price;
+        let discount_start = null;
+        let discount_observed_until = null;
         
         if (history.length >= 2) {
           const latest = history[history.length - 1]?.price ?? product.price;
@@ -240,13 +245,57 @@
           
           if (latest < previous) {
             signals.push("📉 Bajada de precio");
-          }
-          if (product.discount) {
-            signals.push("🏷️ En descuento");
+            has_discount = true;
+            discount_pct = ((previous - latest) / previous) * 100;
+            reference_price = previous;
           }
         }
         
-        return { signals };
+        return { signals, has_discount, discount_pct, reference_price, discount_start, discount_observed_until };
+      }
+
+      function Sparkline({ points }) {
+        if (!Array.isArray(points) || points.length < 2) {
+          return <div style={{ fontSize: 12, color: "var(--text2)" }}>Sin datos suficientes</div>;
+        }
+
+        const prices = points.map(p => p.price || 0).filter(p => p > 0);
+        if (prices.length === 0) return null;
+
+        const minPrice = Math.min(...prices);
+        const maxPrice = Math.max(...prices);
+        const range = maxPrice - minPrice || 1;
+        
+        const width = 100 * (points.length - 1);
+        const svgHeight = 40;
+        const chartHeight = 30;
+        const padding = 5;
+
+        const pathData = points
+          .map((p, i) => {
+            const x = (i / (points.length - 1)) * width;
+            const price = p.price || minPrice;
+            const y = svgHeight - padding - ((price - minPrice) / range) * chartHeight;
+            return `${x},${y}`;
+          })
+          .join(' L ');
+
+        return (
+          <svg
+            width="100%"
+            height={svgHeight}
+            viewBox={`0 0 ${width} ${svgHeight}`}
+            style={{ border: "1px solid var(--border)", borderRadius: 8 }}
+          >
+            <polyline
+              points={pathData}
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="2"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+        );
       }
 
       function formatEventSignals(signals) {
