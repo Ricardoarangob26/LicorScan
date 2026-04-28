@@ -9,6 +9,10 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="./catalog-data.js"></script>
+  <script>
+    window.__SUPABASE_URL__ = "https://bwxxifwqnkrfbegoycod.supabase.co";
+    window.__SUPABASE_ANON__ = "sb_publishable_3g_CcUcp3WI890zg0IGPeg_zI9j1QCq";
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -63,9 +67,9 @@
   <script type="text/babel">
     const { useMemo, useState, useEffect } = React;
 
-    // Supabase config from env or fallback
-    const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || "https://bwxxifwqnkrfbegoycod.supabase.co";
-    const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3eHhpZndxbmtyZmJlZ295Y29kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTQzMjkzNDksImV4cCI6MTczOTkwNTM0OX0.3g_CcUcp3WI890zg0IGPeg_zI9j1QCq";
+    // Supabase config for plain browser deployment
+    const SUPABASE_URL = window.__SUPABASE_URL__ || "https://bwxxifwqnkrfbegoycod.supabase.co";
+    const SUPABASE_ANON = window.__SUPABASE_ANON__ || "sb_publishable_3g_CcUcp3WI890zg0IGPeg_zI9j1QCq";
 
     // Start with static catalog as fallback
     const STATIC_CATALOG = window.__CATALOG__ || { products: [], generated_at: null };
