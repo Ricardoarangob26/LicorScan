@@ -11,9 +11,8 @@ Usage:
 import argparse
 import subprocess
 import sys
+import os
 from pathlib import Path
-import json
-import re
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -24,7 +23,9 @@ def run_command(cmd, description):
     print(f"\n{'='*60}")
     print(f"▶ {description}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd, shell=True)
+    env = os.environ.copy()
+    env["HEADLESS"] = "true"
+    result = subprocess.run(cmd, shell=True, env=env)
     if result.returncode != 0:
         print(f"❌ Failed: {description}")
         return False

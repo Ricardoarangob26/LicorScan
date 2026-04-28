@@ -14,7 +14,8 @@ OUTPUT_DIR = BASE_DIR / os.getenv("OUTPUT_DIR", "data/raw")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Modo navegador
-HEADLESS = os.getenv("HEADLESS", "false").lower() == "true"
+# Default is headless so routine scraping does not open a visible browser.
+HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
 
 # Pool de User-Agents realistas (Chrome/Firefox desktop recientes).
 # La rotación evita el patrón de "siempre mismo UA" que marca sitios como bot.
