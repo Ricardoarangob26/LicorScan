@@ -134,49 +134,104 @@
       return null;
     }
 
+    const CITY_CENTERS = [
+      { name: "Bogotá",       bounds: [4.4,  5.0,  -74.30, -73.9] },
+      { name: "Medellín",     bounds: [6.0,  6.5,  -75.70, -75.4] },
+      { name: "Cali",         bounds: [3.2,  3.7,  -76.70, -76.3] },
+      { name: "Barranquilla", bounds: [10.8, 11.1, -74.90, -74.7] },
+      { name: "Cartagena",    bounds: [9.9,  10.65,-75.90, -75.1] },
+      { name: "Cúcuta",       bounds: [7.7,  8.1,  -72.70, -72.4] },
+      { name: "Bucaramanga",  bounds: [6.9,  7.2,  -73.20, -73.0] },
+      { name: "Pereira",      bounds: [4.7,  4.9,  -75.80, -75.6] },
+      { name: "Manizales",    bounds: [4.9,  5.2,  -75.70, -75.4] },
+      { name: "Santa Marta",  bounds: [11.1, 11.4, -74.30, -74.0] },
+      { name: "Ibagué",       bounds: [4.3,  4.6,  -75.30, -75.0] },
+      { name: "Villavicencio",bounds: [4.0,  4.3,  -73.70, -73.4] },
+      { name: "Pasto",        bounds: [1.1,  1.4,  -77.40, -77.1] },
+      { name: "Armenia",      bounds: [4.4,  4.6,  -75.75, -75.6] },
+    ];
+
+    function getCityFromCoords(lat, lon) {
+      for (const c of CITY_CENTERS) {
+        const [minLat, maxLat, minLng, maxLng] = c.bounds;
+        if (lat >= minLat && lat <= maxLat && lon >= minLng && lon <= maxLng) return c.name;
+      }
+      return "";
+    }
+
     function StoreMap({ onSelectStore }) {
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
+      const allMarkersRef = useRef([]);
       const [status, setStatus] = useState("loading");
-      const [storeCount, setStoreCount] = useState(0);
+      const [allLocations, setAllLocations] = useState([]);
+      const [selectedCity, setSelectedCity] = useState("Cartagena");
+
+      const cities = useMemo(
+        () => [...new Set(allLocations.map(l => l.city).filter(Boolean))].sort(),
+        [allLocations]
+      );
+
+      // Filtrar marcadores y hacer pan cuando cambia la ciudad o cargan datos
+      useEffect(() => {
+        const map = mapInstanceRef.current;
+        if (!map || allMarkersRef.current.length === 0) return;
+        allMarkersRef.current.forEach(({ marker, city }) => {
+          const show = !selectedCity || city === selectedCity;
+          if (show && !map.hasLayer(marker)) marker.addTo(map);
+          if (!show && map.hasLayer(marker)) map.removeLayer(marker);
+        });
+        if (selectedCity) {
+          const pts = allMarkersRef.current
+            .filter(({ city }) => city === selectedCity)
+            .map(({ marker }) => marker.getLatLng());
+          if (pts.length > 0) {
+            const lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
+            const lng = pts.reduce((s, p) => s + p.lng, 0) / pts.length;
+            map.setView([lat, lng], 13);
+          }
+        }
+      }, [selectedCity, allLocations]);
 
       useEffect(() => {
         if (mapInstanceRef.current || !mapRef.current) return;
 
-        const map = L.map(mapRef.current).setView([4.5, -74.0], 6);
+        // Centrado en Cartagena por defecto
+        const map = L.map(mapRef.current).setView([10.391, -75.479], 12);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
-          maxZoom: 18,
+          maxZoom: 19,
         }).addTo(map);
         mapInstanceRef.current = map;
 
-        const query = `[out:json][timeout:45];
-area["ISO3166-1"="CO"][admin_level=2]->.co;
+        // Bounding box de Colombia en lugar de area ISO (más rápido y confiable)
+        const query = `[out:json][timeout:60];
 (
-  node["name"~"Éxito|Exito","i"]["shop"](area.co);
-  node["name"~"D1","i"]["shop"](area.co);
-  node["name"~"Carulla","i"]["shop"](area.co);
-  node["name"~"Olímpica|Olimpica","i"]["shop"](area.co);
-  way["name"~"Éxito|Exito","i"]["shop"](area.co);
-  way["name"~"D1","i"]["shop"](area.co);
-  way["name"~"Carulla","i"]["shop"](area.co);
-  way["name"~"Olímpica|Olimpica","i"]["shop"](area.co);
+  node["name"~"Éxito|Exito","i"](-4.2,-79.0,12.5,-66.9);
+  node["name"="D1"](-4.2,-79.0,12.5,-66.9);
+  node["name"~"Carulla","i"](-4.2,-79.0,12.5,-66.9);
+  node["name"~"Olímpica|Olimpica","i"](-4.2,-79.0,12.5,-66.9);
+  way["name"~"Éxito|Exito","i"](-4.2,-79.0,12.5,-66.9);
+  way["name"="D1"](-4.2,-79.0,12.5,-66.9);
+  way["name"~"Carulla","i"](-4.2,-79.0,12.5,-66.9);
+  way["name"~"Olímpica|Olimpica","i"](-4.2,-79.0,12.5,-66.9);
 );
 out center;`;
 
         fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query })
           .then(r => r.json())
           .then(data => {
-            let count = 0;
+            const loaded = [];
+            const markers = [];
             (data.elements || []).forEach(el => {
               const lat = el.lat ?? el.center?.lat;
               const lon = el.lon ?? el.center?.lon;
               const name = el.tags?.name || "";
               const storeId = identifyStore(name);
               if (!lat || !lon || !storeId) return;
+              const city = el.tags?.["addr:city"] || el.tags?.["addr:suburb"] || el.tags?.["addr:district"] || getCityFromCoords(lat, lon);
               const color = STORE_COLORS[storeId];
-              const city = el.tags?.["addr:city"] || "";
-              L.circleMarker([lat, lon], {
+              const marker = L.circleMarker([lat, lon], {
                 radius: 7, fillColor: color, color: "#fff", weight: 1.5, fillOpacity: 0.9,
               })
               .bindPopup(
@@ -189,38 +244,50 @@ out center;`;
                 `Ver productos</button></div>`
               )
               .addTo(map);
-              count++;
+              markers.push({ marker, city, storeId });
+              loaded.push({ lat, lon, name, storeId, city });
             });
-            setStoreCount(count);
+            allMarkersRef.current = markers;
+            setAllLocations(loaded);
             setStatus("ready");
           })
-          .catch(() => setStatus("error"));
+          .catch(err => { console.error("Overpass error:", err); setStatus("error"); });
 
         window.__mapSelect = (storeId) => onSelectStore(storeId);
-
         return () => {
           delete window.__mapSelect;
-          if (mapInstanceRef.current) {
-            mapInstanceRef.current.remove();
-            mapInstanceRef.current = null;
-          }
+          if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
         };
       }, []);
+
+      const visibleCount = selectedCity
+        ? allLocations.filter(l => l.city === selectedCity).length
+        : allLocations.length;
 
       return (
         <div style={{ position: "relative" }}>
           <div style={{
             position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
             zIndex: 1000, background: "white", borderRadius: 10, padding: "7px 14px",
-            boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 14,
+            boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 12,
             alignItems: "center", whiteSpace: "nowrap",
           }}>
             {status === "loading" && <span style={{ color: "var(--text2)" }}>Cargando desde OpenStreetMap...</span>}
-            {status === "error" && <span style={{ color: "#b91c1c" }}>Error al cargar ubicaciones. Intenta de nuevo.</span>}
+            {status === "error" && <span style={{ color: "#b91c1c" }}>Error al cargar. Intenta de nuevo.</span>}
             {status === "ready" && <>
-              <span style={{ color: "var(--text2)" }}>{storeCount} locales encontrados</span>
+              <select
+                value={selectedCity}
+                onChange={e => setSelectedCity(e.target.value)}
+                style={{ border: "1px solid var(--border)", borderRadius: 6, padding: "4px 8px", fontSize: 12, fontWeight: 600 }}
+              >
+                <option value="">Todas las ciudades ({allLocations.length})</option>
+                {cities.map(c => (
+                  <option key={c} value={c}>{c} ({allLocations.filter(l => l.city === c).length})</option>
+                ))}
+              </select>
+              <span style={{ color: "var(--text2)" }}>{visibleCount} locales</span>
               {Object.entries(STORE_COLORS).map(([id, color]) => (
-                <span key={id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span key={id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }}/>
                   <span>{STORE_NAMES[id]}</span>
                 </span>
