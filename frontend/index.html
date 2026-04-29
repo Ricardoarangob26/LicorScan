@@ -730,20 +730,38 @@
                 {loading && <span style={{ fontSize: 12, color: "var(--text2)" }}>Actualizando...</span>}
               </div>
               {selectedForComparison.length > 0 && (
-                <button
-                  onClick={() => setDrawerMinimized(!drawerMinimized)}
-                  style={{
-                    border: "1px solid var(--border)",
-                    background: "white",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 600,
-                  }}
-                >
-                  {selectedForComparison.length > 0 ? `${selectedForComparison.length} seleccionados` : "Buscar"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setShowComparisonModal(true)}
+                    disabled={selectedForComparison.length < 2}
+                    style={{
+                      border: "none",
+                      background: selectedForComparison.length >= 2 ? "var(--accent)" : "#d0d5dd",
+                      color: "white",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      cursor: selectedForComparison.length >= 2 ? "pointer" : "not-allowed",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    Comparar ({selectedForComparison.length})
+                  </button>
+                  <button
+                    onClick={() => setDrawerMinimized(!drawerMinimized)}
+                    style={{
+                      border: "1px solid var(--border)",
+                      background: "white",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {drawerMinimized ? "Mostrar panel" : "Ocultar panel"}
+                  </button>
+                </div>
               )}
             </div>
           </header>
