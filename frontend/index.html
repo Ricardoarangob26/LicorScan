@@ -117,13 +117,14 @@
     }
 
     const STORE_COLORS = {
-      exito: "oklch(58% 0.18 145)",
-      d1: "oklch(52% 0.19 255)",
-      carulla: "oklch(55% 0.18 25)",
-      olimpica: "oklch(58% 0.2 310)",
+      exito:   "#F5D000",
+      carulla: "#00A94F",
+      d1:      "#D6006E",
+      olimpica:"#E02020",
     };
 
     const STORE_NAMES = { exito: "Éxito", d1: "D1", carulla: "Carulla", olimpica: "Olímpica" };
+    const STORE_TEXT  = { exito: "#1a1a1a", d1: "white", carulla: "white", olimpica: "white" };
 
     function identifyStore(name) {
       const n = (name || "").toLowerCase();
@@ -244,7 +245,7 @@
             `<strong>${name}</strong>` +
             (city ? `<br/><small style="color:#666">${city}</small>` : "") +
             `<br/><button onclick="window.__mapSelect('${store}')" ` +
-            `style="margin-top:8px;background:${color};color:white;border:none;border-radius:6px;` +
+            `style="margin-top:8px;background:${color};color:${STORE_TEXT[store]||'white'};border:none;border-radius:6px;` +
             `padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700;width:100%">` +
             `Ver productos</button></div>`
           );
@@ -423,7 +424,7 @@
             alignItems: "center",
             fontSize: 11,
             fontWeight: 700,
-            color: "white",
+            color: STORE_TEXT[id] || "white",
             background: STORE_COLORS[id] || "#666",
             borderRadius: 999,
             padding: "3px 9px",
