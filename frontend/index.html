@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>LicorScan - Comparador de Precios</title>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="./catalog-data.js"></script>
   <script>
@@ -76,35 +76,36 @@
 
     async function fetchProductsFromSupabase() {
       try {
-        let allProducts = [];
-        let offset = 0;
-        const pageSize = 1000;
-        let hasMore = true;
+        const countRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/products?select=id&limit=1`,
+          {
+            headers: {
+              apikey: SUPABASE_ANON,
+              Authorization: `Bearer ${SUPABASE_ANON}`,
+              Prefer: "count=exact",
+            },
+          }
+        );
+        if (!countRes.ok) throw new Error(`HTTP ${countRes.status}`);
+        const total = parseInt(countRes.headers.get("content-range")?.split("/")[1] || "0");
 
-        while (hasMore) {
-          const res = await fetch(
-            `${SUPABASE_URL}/rest/v1/products?limit=${pageSize}&offset=${offset}`,
+        const pageSize = 1000;
+        const pages = Math.ceil(total / pageSize);
+
+        const requests = Array.from({ length: pages }, (_, i) =>
+          fetch(
+            `${SUPABASE_URL}/rest/v1/products?select=id,store,store_name,title,price,img,url,category,history&limit=${pageSize}&offset=${i * pageSize}`,
             {
               headers: {
                 apikey: SUPABASE_ANON,
                 Authorization: `Bearer ${SUPABASE_ANON}`,
               },
             }
-          );
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const data = await res.json();
-          
-          if (!Array.isArray(data) || data.length === 0) {
-            hasMore = false;
-          } else {
-            allProducts = allProducts.concat(data);
-            if (data.length < pageSize) {
-              hasMore = false;
-            }
-            offset += pageSize;
-          }
-        }
-        
+          ).then(r => r.json())
+        );
+
+        const results = await Promise.all(requests);
+        const allProducts = results.flat();
         console.log(`Supabase fetched ${allProducts.length} products`);
         return allProducts;
       } catch (error) {
@@ -115,28 +116,32 @@
 
     function App() {
       const [products, setProducts] = useState(STATIC_CATALOG.products || []);
-      const [dataSource, setDataSource] = useState("cache"); // "cache" or "live"
-      const [loading, setLoading] = useState(false);
+      const [dataSource, setDataSource] = useState("cache");
+      const [loading, setLoading] = useState(true);
 
-      // Load data on mount
       useEffect(() => {
-        (async () => {
-          setLoading(true);
-          const sbData = await fetchProductsFromSupabase();
+        fetchProductsFromSupabase().then(sbData => {
           if (sbData && sbData.length > 0) {
             setProducts(sbData);
             setDataSource("live");
           }
           setLoading(false);
-        })();
+        });
       }, []);
 
       const [selectedForComparison, setSelectedForComparison] = useState([]);
       const [showComparisonModal, setShowComparisonModal] = useState(false);
       const [showHistoryModal, setShowHistoryModal] = useState(null);
       const [searchQuery, setSearchQuery] = useState("");
+      const [debouncedQuery, setDebouncedQuery] = useState("");
       const [selectedStore, setSelectedStore] = useState("");
       const [drawerMinimized, setDrawerMinimized] = useState(false);
+      const [page, setPage] = useState(1);
+
+      useEffect(() => {
+        const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+        return () => clearTimeout(t);
+      }, [searchQuery]);
 
       const STORE_COLORS = {
         exito: "oklch(58% 0.18 145)",
@@ -153,11 +158,20 @@
 
       const filteredProducts = useMemo(() => {
         return products.filter((p) => {
-          const matchSearch = p.title?.toLowerCase().includes(searchQuery.toLowerCase());
+          const matchSearch = p.title?.toLowerCase().includes(debouncedQuery.toLowerCase());
           const matchStore = !selectedStore || p.store === selectedStore;
           return matchSearch && matchStore;
         });
-      }, [products, searchQuery, selectedStore]);
+      }, [products, debouncedQuery, selectedStore]);
+
+      const PAGE_SIZE = 48;
+
+      useEffect(() => { setPage(1); }, [debouncedQuery, selectedStore]);
+
+      const visibleProducts = useMemo(
+        () => filteredProducts.slice(0, page * PAGE_SIZE),
+        [filteredProducts, page]
+      );
 
       const uniqueStores = [...new Set(products.map((p) => p.store))].sort();
 
@@ -741,7 +755,7 @@
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
                 {filteredProducts.length ? (
-                  filteredProducts.map((product) => (
+                  visibleProducts.map((product) => (
                     <Card
                       key={product.id}
                       product={product}
@@ -756,6 +770,25 @@
                   </div>
                 )}
               </div>
+              {visibleProducts.length < filteredProducts.length && (
+                <div style={{ textAlign: "center", marginTop: 16 }}>
+                  <button
+                    onClick={() => setPage(p => p + 1)}
+                    style={{
+                      border: "1px solid var(--accent)",
+                      background: "white",
+                      color: "var(--accent)",
+                      borderRadius: 10,
+                      padding: "10px 24px",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cargar más ({filteredProducts.length - visibleProducts.length} restantes)
+                  </button>
+                </div>
+              )}
             </div>
 
             {showComparisonModal && (
