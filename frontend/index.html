@@ -114,6 +114,22 @@
       }
     }
 
+    function extractSize(title) {
+      if (!title) return null;
+      const t = title.toLowerCase();
+      const mlMatch = t.match(/(\d+(?:[.,]\d+)?)\s*ml\b/);
+      if (mlMatch) return `${parseFloat(mlMatch[1].replace(',', '.'))} ml`;
+      const lMatch = t.match(/(\d+(?:[.,]\d+)?)\s*(?:l|lt|litros?)\b/);
+      if (lMatch) return `${parseFloat(lMatch[1].replace(',', '.'))} L`;
+      return null;
+    }
+
+    function sizeToMl(size) {
+      const m = size.match(/([\d.]+)\s*(ml|L)/);
+      if (!m) return 0;
+      return m[2] === 'L' ? parseFloat(m[1]) * 1000 : parseFloat(m[1]);
+    }
+
     function App() {
       const [products, setProducts] = useState(STATIC_CATALOG.products || []);
       const [dataSource, setDataSource] = useState("cache");
@@ -137,6 +153,8 @@
       const [selectedStore, setSelectedStore] = useState("");
       const [drawerMinimized, setDrawerMinimized] = useState(false);
       const [page, setPage] = useState(1);
+      const [selectedCategory, setSelectedCategory] = useState("");
+      const [selectedSize, setSelectedSize] = useState("");
 
       useEffect(() => {
         const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
@@ -160,13 +178,15 @@
         return products.filter((p) => {
           const matchSearch = p.title?.toLowerCase().includes(debouncedQuery.toLowerCase());
           const matchStore = !selectedStore || p.store === selectedStore;
-          return matchSearch && matchStore;
+          const matchCategory = !selectedCategory || p.category === selectedCategory;
+          const matchSize = !selectedSize || extractSize(p.title) === selectedSize;
+          return matchSearch && matchStore && matchCategory && matchSize;
         });
-      }, [products, debouncedQuery, selectedStore]);
+      }, [products, debouncedQuery, selectedStore, selectedCategory, selectedSize]);
 
       const PAGE_SIZE = 48;
 
-      useEffect(() => { setPage(1); }, [debouncedQuery, selectedStore]);
+      useEffect(() => { setPage(1); }, [debouncedQuery, selectedStore, selectedCategory, selectedSize]);
 
       const visibleProducts = useMemo(
         () => filteredProducts.slice(0, page * PAGE_SIZE),
@@ -175,12 +195,21 @@
 
       const uniqueStores = [...new Set(products.map((p) => p.store))].sort();
 
+      const uniqueCategories = useMemo(
+        () => [...new Set(products.map(p => p.category).filter(Boolean))].sort(),
+        [products]
+      );
+
+      const uniqueSizes = useMemo(() => {
+        const sizes = [...new Set(products.map(p => extractSize(p.title)).filter(Boolean))];
+        return sizes.sort((a, b) => sizeToMl(a) - sizeToMl(b));
+      }, [products]);
+
       const toggleCompare = (product) => {
         if (selectedForComparison.find((p) => p.id === product.id)) {
           setSelectedForComparison(selectedForComparison.filter((p) => p.id !== product.id));
         } else if (selectedForComparison.length < 4) {
           setSelectedForComparison([...selectedForComparison, product]);
-          if (!drawerMinimized) setShowComparisonModal(true);
         }
       };
 
@@ -734,23 +763,40 @@
                     fontSize: 14,
                   }}
                 />
-                <select
-                  value={selectedStore}
-                  onChange={(e) => setSelectedStore(e.target.value)}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    fontSize: 14,
-                  }}
-                >
-                  <option value="">Todas las tiendas ({products.length})</option>
-                  {uniqueStores.map((store) => (
-                    <option key={store} value={store}>
-                      {store} ({products.filter((p) => p.store === store).length})
-                    </option>
-                  ))}
-                </select>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+                  <select
+                    value={selectedStore}
+                    onChange={(e) => setSelectedStore(e.target.value)}
+                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                  >
+                    <option value="">Todas las tiendas ({products.length})</option>
+                    {uniqueStores.map((store) => (
+                      <option key={store} value={store}>
+                        {store} ({products.filter((p) => p.store === store).length})
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                  >
+                    <option value="">Todas las categorías</option>
+                    {uniqueCategories.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedSize}
+                    onChange={(e) => setSelectedSize(e.target.value)}
+                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
+                  >
+                    <option value="">Todos los tamaños</option>
+                    {uniqueSizes.map((size) => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
