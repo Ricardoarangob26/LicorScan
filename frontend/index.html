@@ -114,6 +114,28 @@
       }
     }
 
+    function deduplicateProducts(products) {
+      const seen = new Map();
+      for (const p of products) {
+        // URL es el identificador único del producto en cada tienda.
+        // Sin URL, caemos a store+title como fallback.
+        const key = p.url ? `${p.store}||${p.url}` : `${p.store}||${(p.title || '').toLowerCase().trim()}`;
+        if (!seen.has(key)) {
+          seen.set(key, p);
+        } else {
+          // Entre duplicados de la misma URL, conservar el que tiene más historial
+          const prev = seen.get(key);
+          const prevLen = Array.isArray(prev.history) ? prev.history.length : 0;
+          const curLen = Array.isArray(p.history) ? p.history.length : 0;
+          if (curLen > prevLen) seen.set(key, p);
+        }
+      }
+      const result = [...seen.values()];
+      if (result.length < products.length)
+        console.log(`Deduplicados: ${products.length - result.length} registros eliminados`);
+      return result;
+    }
+
     function extractSize(title) {
       if (!title) return null;
       const t = title.toLowerCase();
@@ -131,14 +153,14 @@
     }
 
     function App() {
-      const [products, setProducts] = useState(STATIC_CATALOG.products || []);
+      const [products, setProducts] = useState(deduplicateProducts(STATIC_CATALOG.products || []));
       const [dataSource, setDataSource] = useState("cache");
       const [loading, setLoading] = useState(true);
 
       useEffect(() => {
         fetchProductsFromSupabase().then(sbData => {
           if (sbData && sbData.length > 0) {
-            setProducts(sbData);
+            setProducts(deduplicateProducts(sbData));
             setDataSource("live");
           }
           setLoading(false);
