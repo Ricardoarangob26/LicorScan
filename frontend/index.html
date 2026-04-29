@@ -5,9 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>LicorScan - Comparador de Precios</title>
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="./catalog-data.js"></script>
   <script>
     window.__SUPABASE_URL__ = "https://bwxxifwqnkrfbegoycod.supabase.co";
@@ -65,7 +67,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useMemo, useState, useEffect } = React;
+    const { useMemo, useState, useEffect, useRef } = React;
 
     // Supabase config for plain browser deployment
     const SUPABASE_URL = window.__SUPABASE_URL__ || "https://bwxxifwqnkrfbegoycod.supabase.co";
@@ -114,6 +116,122 @@
       }
     }
 
+    const STORE_COLORS = {
+      exito: "oklch(58% 0.18 145)",
+      d1: "oklch(52% 0.19 255)",
+      carulla: "oklch(55% 0.18 25)",
+      olimpica: "oklch(58% 0.2 310)",
+    };
+
+    const STORE_NAMES = { exito: "Éxito", d1: "D1", carulla: "Carulla", olimpica: "Olímpica" };
+
+    function identifyStore(name) {
+      const n = (name || "").toLowerCase();
+      if (n.includes("éxito") || n.includes("exito")) return "exito";
+      if (/\bd1\b/.test(n)) return "d1";
+      if (n.includes("carulla")) return "carulla";
+      if (n.includes("olímpica") || n.includes("olimpica")) return "olimpica";
+      return null;
+    }
+
+    function StoreMap({ onSelectStore }) {
+      const mapRef = useRef(null);
+      const mapInstanceRef = useRef(null);
+      const [status, setStatus] = useState("loading");
+      const [storeCount, setStoreCount] = useState(0);
+
+      useEffect(() => {
+        if (mapInstanceRef.current || !mapRef.current) return;
+
+        const map = L.map(mapRef.current).setView([4.5, -74.0], 6);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
+          maxZoom: 18,
+        }).addTo(map);
+        mapInstanceRef.current = map;
+
+        const query = `[out:json][timeout:45];
+area["ISO3166-1"="CO"][admin_level=2]->.co;
+(
+  node["name"~"Éxito|Exito","i"]["shop"](area.co);
+  node["name"~"D1","i"]["shop"](area.co);
+  node["name"~"Carulla","i"]["shop"](area.co);
+  node["name"~"Olímpica|Olimpica","i"]["shop"](area.co);
+  way["name"~"Éxito|Exito","i"]["shop"](area.co);
+  way["name"~"D1","i"]["shop"](area.co);
+  way["name"~"Carulla","i"]["shop"](area.co);
+  way["name"~"Olímpica|Olimpica","i"]["shop"](area.co);
+);
+out center;`;
+
+        fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query })
+          .then(r => r.json())
+          .then(data => {
+            let count = 0;
+            (data.elements || []).forEach(el => {
+              const lat = el.lat ?? el.center?.lat;
+              const lon = el.lon ?? el.center?.lon;
+              const name = el.tags?.name || "";
+              const storeId = identifyStore(name);
+              if (!lat || !lon || !storeId) return;
+              const color = STORE_COLORS[storeId];
+              const city = el.tags?.["addr:city"] || "";
+              L.circleMarker([lat, lon], {
+                radius: 7, fillColor: color, color: "#fff", weight: 1.5, fillOpacity: 0.9,
+              })
+              .bindPopup(
+                `<div style="font-family:sans-serif;min-width:150px">` +
+                `<strong>${name}</strong>` +
+                (city ? `<br/><small style="color:#666">${city}</small>` : "") +
+                `<br/><button onclick="window.__mapSelect('${storeId}')" ` +
+                `style="margin-top:8px;background:${color};color:white;border:none;border-radius:6px;` +
+                `padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700;width:100%">` +
+                `Ver productos</button></div>`
+              )
+              .addTo(map);
+              count++;
+            });
+            setStoreCount(count);
+            setStatus("ready");
+          })
+          .catch(() => setStatus("error"));
+
+        window.__mapSelect = (storeId) => onSelectStore(storeId);
+
+        return () => {
+          delete window.__mapSelect;
+          if (mapInstanceRef.current) {
+            mapInstanceRef.current.remove();
+            mapInstanceRef.current = null;
+          }
+        };
+      }, []);
+
+      return (
+        <div style={{ position: "relative" }}>
+          <div style={{
+            position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+            zIndex: 1000, background: "white", borderRadius: 10, padding: "7px 14px",
+            boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 14,
+            alignItems: "center", whiteSpace: "nowrap",
+          }}>
+            {status === "loading" && <span style={{ color: "var(--text2)" }}>Cargando desde OpenStreetMap...</span>}
+            {status === "error" && <span style={{ color: "#b91c1c" }}>Error al cargar ubicaciones. Intenta de nuevo.</span>}
+            {status === "ready" && <>
+              <span style={{ color: "var(--text2)" }}>{storeCount} locales encontrados</span>
+              {Object.entries(STORE_COLORS).map(([id, color]) => (
+                <span key={id} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }}/>
+                  <span>{STORE_NAMES[id]}</span>
+                </span>
+              ))}
+            </>}
+          </div>
+          <div ref={mapRef} style={{ height: "calc(100vh - 130px)", borderRadius: 14, border: "1px solid var(--border)" }} />
+        </div>
+      );
+    }
+
     function deduplicateProducts(products) {
       const seen = new Map();
       for (const p of products) {
@@ -156,6 +274,7 @@
       const [products, setProducts] = useState(deduplicateProducts(STATIC_CATALOG.products || []));
       const [dataSource, setDataSource] = useState("cache");
       const [loading, setLoading] = useState(true);
+      const [activeTab, setActiveTab] = useState("productos");
 
       useEffect(() => {
         fetchProductsFromSupabase().then(sbData => {
@@ -182,13 +301,6 @@
         const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
         return () => clearTimeout(t);
       }, [searchQuery]);
-
-      const STORE_COLORS = {
-        exito: "oklch(58% 0.18 145)",
-        d1: "oklch(52% 0.19 255)",
-        carulla: "oklch(55% 0.18 25)",
-        olimpica: "oklch(58% 0.2 310)",
-      };
 
       const fmt = (value) => new Intl.NumberFormat("es-CO", {
         style: "currency",
@@ -763,8 +875,19 @@
         <div style={{ minHeight: "100vh", display: "grid", gridTemplateRows: "auto 1fr" }}>
           <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
             <div style={{ maxWidth: 1200, margin: "0 auto", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <h1 style={{ fontFamily: "Sora", fontSize: 20, fontWeight: 700 }}>LicorScan</h1>
+                <div style={{ display: "flex", background: "var(--bg)", borderRadius: 8, padding: 2, gap: 2 }}>
+                  {[["productos", "Productos"], ["locales", "Locales"]].map(([tab, label]) => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} style={{
+                      border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 12, fontWeight: 600,
+                      cursor: "pointer",
+                      background: activeTab === tab ? "white" : "transparent",
+                      color: activeTab === tab ? "var(--accent)" : "var(--text2)",
+                      boxShadow: activeTab === tab ? "0 1px 3px rgba(0,0,0,.1)" : "none",
+                    }}>{label}</button>
+                  ))}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <span className={`data-source-badge ${dataSource}`}>
@@ -809,7 +932,11 @@
             </div>
           </header>
 
-          <main style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14, maxWidth: 1400, margin: "0 auto", padding: 14, width: "100%" }}>
+          <main style={{ maxWidth: 1400, margin: "0 auto", padding: 14, width: "100%" }}>
+            {activeTab === "locales" ? (
+              <StoreMap onSelectStore={(storeId) => { setSelectedStore(storeId); setActiveTab("productos"); }} />
+            ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14 }}>
             <div>
               <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
                 <input
@@ -922,6 +1049,8 @@
               onClear={() => setSelectedForComparison([])}
               onToggleMinimize={setDrawerMinimized}
             />
+            </div>
+            )}
           </main>
         </div>
       );
