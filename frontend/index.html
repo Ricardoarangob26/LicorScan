@@ -218,8 +218,21 @@
 );
 out center;`;
 
-        fetch("https://overpass-api.de/api/interpreter", { method: "POST", body: query })
-          .then(r => r.json())
+        const OVERPASS_ENDPOINTS = [
+          "https://overpass.private.coffee/api/interpreter",
+          "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        ];
+        const fetchOverpass = async (q) => {
+          for (const url of OVERPASS_ENDPOINTS) {
+            try {
+              const r = await fetch(url, { method: "POST", body: q });
+              if (r.ok) return r.json();
+            } catch {}
+          }
+          throw new Error("All Overpass endpoints failed");
+        };
+
+        fetchOverpass(query)
           .then(data => {
             const loaded = [];
             const markers = [];
@@ -251,7 +264,7 @@ out center;`;
             setAllLocations(loaded);
             setStatus("ready");
           })
-          .catch(err => { console.error("Overpass error:", err); setStatus("error"); });
+          .catch(err => { console.error("Overpass error:", err.message); setStatus("error"); });
 
         window.__mapSelect = (storeId) => onSelectStore(storeId);
         return () => {
