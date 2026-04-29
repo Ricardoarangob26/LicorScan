@@ -566,6 +566,8 @@
       function ComparisonModal({ items, onClose, onRemove }) {
         const prices = items.map((p) => p.price || 0);
         const min = prices.length ? Math.min(...prices) : 0;
+        const categories = [...new Set(items.map(i => i.category).filter(Boolean))];
+        const categoryMismatch = categories.length > 1;
 
         return (
           <div style={{
@@ -595,6 +597,25 @@
               <p style={{ fontSize: 13, color: "var(--text2)", marginBottom: 12 }}>
                 Puedes comparar hasta 4 articulos de la misma tienda o de tiendas distintas.
               </p>
+              {categoryMismatch && (
+                <div style={{
+                  background: "#fef3c7",
+                  border: "1px solid #f59e0b",
+                  borderRadius: 10,
+                  padding: "10px 14px",
+                  marginBottom: 14,
+                  fontSize: 13,
+                  color: "#92400e",
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
+                }}>
+                  <span style={{ fontSize: 16, flexShrink: 0 }}>⚠️</span>
+                  <span>
+                    Estás comparando productos de categorías diferentes (<strong>{categories.join(", ")}</strong>). La comparación puede no ser útil entre artículos de distinto tipo.
+                  </span>
+                </div>
+              )}
 
               <div style={{
                 display: "grid",
@@ -759,7 +780,7 @@
                       fontWeight: 600,
                     }}
                   >
-                    {drawerMinimized ? "Mostrar panel" : "Ocultar panel"}
+                    {drawerMinimized ? "Ocultar panel" : "Mostrar panel"}
                   </button>
                 </div>
               )}
