@@ -159,20 +159,43 @@
       return "";
     }
 
+    // ─── Sucursales estáticas ──────────────────────────────────────────────────
+    // Agrega aquí cada sucursal: { name, store, lat, lon, city }
+    // store debe ser uno de: "exito" | "d1" | "carulla" | "olimpica"
+    const STORE_BRANCHES = [
+      // Éxito
+      { name: "Éxito Cartagena",           store: "exito",   lat: 10.3916, lon: -75.4792, city: "Cartagena" },
+      { name: "Éxito Castellana",           store: "exito",   lat: 10.4005, lon: -75.4835, city: "Cartagena" },
+      { name: "Éxito Ejecutivos",           store: "exito",   lat: 10.3958, lon: -75.4876, city: "Cartagena" },
+      { name: "Éxito San Diego",            store: "exito",   lat: 10.4255, lon: -75.5451, city: "Cartagena" },
+      // Carulla
+      { name: "Carulla Castillo Grande",    store: "carulla", lat: 10.3942, lon: -75.5530, city: "Cartagena" },
+      { name: "Carulla Santa Lucía",        store: "carulla", lat: 10.3969, lon: -75.4799, city: "Cartagena" },
+      { name: "Carulla Express Street Roman", store: "carulla", lat: 10.4233, lon: -75.5518, city: "Cartagena" },
+      { name: "Carulla Express Manga",      store: "carulla", lat: 10.4090, lon: -75.5312, city: "Cartagena" },
+      // D1
+      { name: "D1 Buenos Aires",            store: "d1",      lat: 10.4107, lon: -75.4920, city: "Cartagena" },
+      { name: "D1 Nariño",                  store: "d1",      lat: 10.4152, lon: -75.5008, city: "Cartagena" },
+      { name: "D1 San Fernando",            store: "d1",      lat: 10.3894, lon: -75.5037, city: "Cartagena" },
+      // Olímpica
+      { name: "Olímpica Avenida Sucre",     store: "olimpica", lat: 10.4425, lon: -75.5283, city: "Cartagena" },
+      { name: "Olímpica Bocagrande",        store: "olimpica", lat: 10.3997, lon: -75.5543, city: "Cartagena" },
+      { name: "Olímpica La Matuna",         store: "olimpica", lat: 10.4210, lon: -75.5480, city: "Cartagena" },
+    ];
+    // ──────────────────────────────────────────────────────────────────────────
+
     function StoreMap({ onSelectStore }) {
       const mapRef = useRef(null);
       const mapInstanceRef = useRef(null);
       const allMarkersRef = useRef([]);
-      const [status, setStatus] = useState("loading");
-      const [allLocations, setAllLocations] = useState([]);
-      const [selectedCity, setSelectedCity] = useState("Cartagena");
 
+      const allLocations = STORE_BRANCHES;
       const cities = useMemo(
         () => [...new Set(allLocations.map(l => l.city).filter(Boolean))].sort(),
-        [allLocations]
+        []
       );
+      const [selectedCity, setSelectedCity] = useState(cities[0] || "");
 
-      // Filtrar marcadores y hacer pan cuando cambia la ciudad o cargan datos
       useEffect(() => {
         const map = mapInstanceRef.current;
         if (!map || allMarkersRef.current.length === 0) return;
@@ -191,78 +214,44 @@
             map.setView([lat, lng], 13);
           }
         }
-      }, [selectedCity, allLocations]);
+      }, [selectedCity]);
 
       useEffect(() => {
         if (mapInstanceRef.current || !mapRef.current) return;
 
-        // Centrado en Cartagena por defecto
-        const map = L.map(mapRef.current).setView([10.391, -75.479], 12);
+        const firstCity = cities[0];
+        const initial = firstCity
+          ? allLocations.filter(l => l.city === firstCity)
+          : allLocations;
+        const centerLat = initial.length ? initial.reduce((s, l) => s + l.lat, 0) / initial.length : 10.391;
+        const centerLon = initial.length ? initial.reduce((s, l) => s + l.lon, 0) / initial.length : -75.479;
+
+        const map = L.map(mapRef.current).setView([centerLat, centerLon], 13);
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>',
           maxZoom: 19,
         }).addTo(map);
         mapInstanceRef.current = map;
 
-        // nwr = node+way+relation; regex sin Unicode, flag i sin comillas
-        const query = `[out:json][timeout:60];
-(
-  nwr["name"~"xito",i](-4.2,-79.0,12.5,-66.9);
-  nwr["name"="D1"](-4.2,-79.0,12.5,-66.9);
-  nwr["name"~"Carulla",i](-4.2,-79.0,12.5,-66.9);
-  nwr["name"~"l.mpica",i](-4.2,-79.0,12.5,-66.9);
-);
-out center;`;
-
-        const OVERPASS_ENDPOINTS = [
-          "https://overpass.private.coffee/api/interpreter",
-          "https://overpass.openstreetmap.fr/api/interpreter",
-        ];
-        const fetchOverpass = async (q) => {
-          const body = "data=" + encodeURIComponent(q);
-          const headers = { "Content-Type": "application/x-www-form-urlencoded" };
-          for (const url of OVERPASS_ENDPOINTS) {
-            try {
-              const r = await fetch(url, { method: "POST", body, headers });
-              if (r.ok) return r.json();
-            } catch {}
-          }
-          throw new Error("All Overpass endpoints failed");
-        };
-
-        fetchOverpass(query)
-          .then(data => {
-            const loaded = [];
-            const markers = [];
-            (data.elements || []).forEach(el => {
-              const lat = el.lat ?? el.center?.lat;
-              const lon = el.lon ?? el.center?.lon;
-              const name = el.tags?.name || "";
-              const storeId = identifyStore(name);
-              if (!lat || !lon || !storeId) return;
-              const city = el.tags?.["addr:city"] || el.tags?.["addr:suburb"] || el.tags?.["addr:district"] || getCityFromCoords(lat, lon);
-              const color = STORE_COLORS[storeId];
-              const marker = L.circleMarker([lat, lon], {
-                radius: 7, fillColor: color, color: "#fff", weight: 1.5, fillOpacity: 0.9,
-              })
-              .bindPopup(
-                `<div style="font-family:sans-serif;min-width:150px">` +
-                `<strong>${name}</strong>` +
-                (city ? `<br/><small style="color:#666">${city}</small>` : "") +
-                `<br/><button onclick="window.__mapSelect('${storeId}')" ` +
-                `style="margin-top:8px;background:${color};color:white;border:none;border-radius:6px;` +
-                `padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700;width:100%">` +
-                `Ver productos</button></div>`
-              )
-              .addTo(map);
-              markers.push({ marker, city, storeId });
-              loaded.push({ lat, lon, name, storeId, city });
-            });
-            allMarkersRef.current = markers;
-            setAllLocations(loaded);
-            setStatus("ready");
-          })
-          .catch(err => { console.error("Overpass error:", err.message); setStatus("error"); });
+        const markers = [];
+        allLocations.forEach(({ name, store, lat, lon, city }) => {
+          const color = STORE_COLORS[store] || "#666";
+          const show = !selectedCity || city === selectedCity;
+          const marker = L.circleMarker([lat, lon], {
+            radius: 8, fillColor: color, color: "#fff", weight: 2, fillOpacity: 0.9,
+          }).bindPopup(
+            `<div style="font-family:sans-serif;min-width:160px">` +
+            `<strong>${name}</strong>` +
+            (city ? `<br/><small style="color:#666">${city}</small>` : "") +
+            `<br/><button onclick="window.__mapSelect('${store}')" ` +
+            `style="margin-top:8px;background:${color};color:white;border:none;border-radius:6px;` +
+            `padding:5px 12px;cursor:pointer;font-size:12px;font-weight:700;width:100%">` +
+            `Ver productos</button></div>`
+          );
+          if (show) marker.addTo(map);
+          markers.push({ marker, city, store });
+        });
+        allMarkersRef.current = markers;
 
         window.__mapSelect = (storeId) => onSelectStore(storeId);
         return () => {
@@ -275,6 +264,8 @@ out center;`;
         ? allLocations.filter(l => l.city === selectedCity).length
         : allLocations.length;
 
+      const isEmpty = allLocations.length === 0;
+
       return (
         <div style={{ position: "relative" }}>
           <div style={{
@@ -283,9 +274,9 @@ out center;`;
             boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 12,
             alignItems: "center", whiteSpace: "nowrap",
           }}>
-            {status === "loading" && <span style={{ color: "var(--text2)" }}>Cargando desde OpenStreetMap...</span>}
-            {status === "error" && <span style={{ color: "#b91c1c" }}>Error al cargar. Intenta de nuevo.</span>}
-            {status === "ready" && <>
+            {isEmpty ? (
+              <span style={{ color: "var(--text2)" }}>Agrega sucursales en STORE_BRANCHES</span>
+            ) : <>
               <select
                 value={selectedCity}
                 onChange={e => setSelectedCity(e.target.value)}
