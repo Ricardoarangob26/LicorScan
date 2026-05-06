@@ -260,7 +260,7 @@
                   setErr(""); setLoading(true);
                   const {error:er}=await supabaseClient.auth.signInWithOAuth({
                     provider:"google",
-                    options:{redirectTo:window.location.href}
+                    options:{redirectTo:window.location.origin}
                   });
                   if(er) setErr(er.message);
                   setLoading(false);
