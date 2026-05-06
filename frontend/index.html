@@ -31,43 +31,88 @@
       --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
     }
     body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+    a { color: inherit; }
+    input, select, button { font-family: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .header-inner {
+      max-width: 1200px; margin: 0 auto; padding: 10px 16px;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .header-brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .header-brand h1 { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 700; }
+    .tab-bar { display: flex; background: var(--bg); border-radius: 8px; padding: 2px; gap: 2px; }
+    .tab-btn { border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .header-status { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; }
+    .header-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+    .user-email { font-size: 12px; color: var(--text2); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Data source badge ──────────────────────────────── */
+    .data-source-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; padding: 4px 8px; border-radius: 6px; font-weight: 600; white-space: nowrap;
+    }
+    .data-source-badge.live  { background: #d1fae5; color: #065f46; }
+    .data-source-badge.cache { background: #fef3c7; color: #92400e; }
+
+    /* ── Cart badge ─────────────────────────────────────── */
     .cart-badge {
       position: absolute; top: -6px; right: -6px;
       background: #e02020; color: white; border-radius: 999px;
       font-size: 10px; font-weight: 700; min-width: 18px; height: 18px;
       display: flex; align-items: center; justify-content: center; padding: 0 4px;
     }
-    a { color: inherit; }
-    input, select, button { font-family: inherit; }
-    .product-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
+
+    /* ── Layout ─────────────────────────────────────────── */
+    .main-inner { max-width: 1400px; margin: 0 auto; padding: 14px; width: 100%; }
+    .products-layout { display: grid; grid-template-columns: 1fr 320px; gap: 14px; }
+    .filters-area { display: grid; gap: 10px; margin-bottom: 16px; }
+    .filters-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+    .filter-select {
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; font-size: 14px; width: 100%; background: white;
+      appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23888' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px;
     }
-    .drawer-enter {
-      transform: translateX(0);
-      opacity: 1;
+    .search-input {
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 11px 14px; font-size: 15px; width: 100%;
+      outline: none; transition: border-color .15s;
     }
-    .drawer-exit {
-      transform: translateX(calc(100% + 12px));
-      opacity: 0;
-      pointer-events: none;
+    .search-input:focus { border-color: var(--accent); }
+
+    /* ── Cards ──────────────────────────────────────────── */
+    .product-card { transition: transform .15s ease, box-shadow .15s ease; }
+    .product-card:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(0,0,0,.12); }
+    .card-btn {
+      font-size: 11px; font-weight: 700; border-radius: 8px;
+      padding: 6px 9px; cursor: pointer; white-space: nowrap;
     }
-    .data-source-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      padding: 4px 8px;
-      border-radius: 6px;
-      font-weight: 600;
+
+    /* ── Comparison drawer ──────────────────────────────── */
+    .drawer-enter { transform: translateX(0); opacity: 1; }
+    .drawer-exit  { transform: translateX(calc(100% + 12px)); opacity: 0; pointer-events: none; }
+
+    /* ── Responsive ─────────────────────────────────────── */
+    @media (max-width: 900px) {
+      .products-layout { grid-template-columns: 1fr; }
+      .comparison-drawer-wrap { display: none; }
     }
-    .data-source-badge.live {
-      background: #d1fae5;
-      color: #065f46;
+    @media (max-width: 660px) {
+      .header-inner { padding: 8px 12px; gap: 8px; }
+      .header-status { display: none; }
+      .filters-row { grid-template-columns: 1fr 1fr; }
+      .product-grid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 10px; }
+      .user-email { display: none; }
+      .hide-sm { display: none !important; }
+      .main-inner { padding: 10px; }
     }
-    .data-source-badge.cache {
-      background: #fef3c7;
-      color: #92400e;
+    @media (max-width: 440px) {
+      .filters-row { grid-template-columns: 1fr; }
+      .product-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+      .header-brand h1 { font-size: 17px; }
+      .tab-btn { padding: 6px 10px; }
     }
   </style>
 </head>
@@ -409,10 +454,10 @@
       return (
         <div style={{ position: "relative" }}>
           <div style={{
-            position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
-            zIndex: 1000, background: "white", borderRadius: 10, padding: "7px 14px",
-            boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 12,
-            alignItems: "center", whiteSpace: "nowrap",
+            position: "absolute", top: 10, left: 10, right: 10,
+            zIndex: 1000, background: "white", borderRadius: 10, padding: "7px 12px",
+            boxShadow: "var(--shadow)", fontSize: 12, display: "flex", gap: 8,
+            alignItems: "center", flexWrap: "wrap",
           }}>
             {isEmpty ? (
               <span style={{ color: "var(--text2)" }}>Agrega sucursales en STORE_BRANCHES</span>
@@ -436,7 +481,7 @@
               ))}
             </>}
           </div>
-          <div ref={mapRef} style={{ height: "calc(100vh - 130px)", borderRadius: 14, border: "1px solid var(--border)" }} />
+          <div ref={mapRef} style={{ height: "min(calc(100vh - 120px), 600px)", borderRadius: 14, border: "1px solid var(--border)" }} />
         </div>
       );
     }
@@ -884,42 +929,29 @@
               {signalSummary ? <p style={{ fontSize: 10, color: "var(--text2)" }}>{signalSummary}</p> : null}
             </div>
 
-            <div style={{ marginTop: "auto", paddingTop: 8, borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <strong style={{ fontFamily: "Sora", color: "var(--accent)", fontSize: 18 }}>{fmt(product.price)}</strong>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                <button onClick={(e) => { e.stopPropagation(); addToCart(product); }} style={{
-                  fontSize: 11, fontWeight: 700, color: "white",
-                  background: "#067647", border: "none", borderRadius: 8, padding: "5px 8px", cursor: "pointer",
-                }}>+ Carrito</button>
-                <button onClick={(e) => { e.stopPropagation(); onToggleSelect(product); }} style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: selected ? "white" : "var(--accent)",
-                  background: selected ? "var(--accent)" : "white",
-                  border: "1px solid var(--accent)",
-                  borderRadius: 8,
-                  padding: "5px 8px",
-                  cursor: "pointer",
-                }}>{selected ? "Seleccionado" : "Comparar"}</button>
-                <button onClick={(e) => { e.stopPropagation(); onOpenHistory(product); }} style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "var(--text)",
-                  background: "white",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  padding: "5px 8px",
-                  cursor: "pointer",
-                }}>Historico</button>
-                <a href={product.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "var(--accent)",
-                  textDecoration: "none",
-                  border: "1px solid var(--accent)",
-                  borderRadius: 8,
-                  padding: "5px 8px",
-                }}>Ver</a>
+            <div style={{ marginTop:"auto", paddingTop:8, borderTop:"1px solid var(--border)" }}>
+              <strong style={{ fontFamily:"Sora", color:"var(--accent)", fontSize:20, display:"block", marginBottom:8 }}>{fmt(product.price)}</strong>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
+                <button onClick={(e)=>{e.stopPropagation();addToCart(product);}} className="card-btn" style={{
+                  color:"white", background:"#067647", border:"none", gridColumn:"1/-1",
+                }}>🛒 Agregar al carrito</button>
+                <button onClick={(e)=>{e.stopPropagation();onToggleSelect(product);}} className="card-btn" style={{
+                  color: selected?"white":"var(--accent)",
+                  background: selected?"var(--accent)":"white",
+                  border:"1px solid var(--accent)",
+                }}>{selected?"✓ Comparando":"⚖️ Comparar"}</button>
+                <button onClick={(e)=>{e.stopPropagation();onOpenHistory(product);}} className="card-btn" style={{
+                  color:"var(--text)", background:"white", border:"1px solid var(--border)",
+                }}>📈 Historial</button>
+                {product.url && (
+                  <a href={product.url} target="_blank" rel="noopener noreferrer"
+                    onClick={(e)=>e.stopPropagation()}
+                    style={{ gridColumn:"1/-1", display:"block", textAlign:"center", fontSize:11,
+                      fontWeight:700, color:"var(--text2)", textDecoration:"none",
+                      padding:"6px", borderRadius:8, border:"1px solid var(--border)",
+                      background:"white",
+                    }}>Ver en tienda ↗</a>
+                )}
               </div>
             </div>
           </article>
@@ -1197,165 +1229,141 @@
 
       return (
         <div style={{ minHeight: "100vh", display: "grid", gridTemplateRows: "auto 1fr" }}>
-          <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)" }}>
-            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <h1 style={{ fontFamily: "Sora", fontSize: 20, fontWeight: 700 }}>LicorScan</h1>
-                <div style={{ display: "flex", background: "var(--bg)", borderRadius: 8, padding: 2, gap: 2 }}>
-                  {[["productos", "Productos"], ["locales", "Locales"]].map(([tab, label]) => (
-                    <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                      border: "none", borderRadius: 6, padding: "5px 14px", fontSize: 12, fontWeight: 600,
-                      cursor: "pointer",
-                      background: activeTab === tab ? "white" : "transparent",
-                      color: activeTab === tab ? "var(--accent)" : "var(--text2)",
-                      boxShadow: activeTab === tab ? "0 1px 3px rgba(0,0,0,.1)" : "none",
+          <header style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)", position: "sticky", top: 0, zIndex: 50 }}>
+            <div className="header-inner">
+              <div className="header-brand">
+                <h1>LicorScan</h1>
+                <div className="tab-bar">
+                  {[["productos","Productos"],["locales","Locales"]].map(([tab,label]) => (
+                    <button key={tab} onClick={() => setActiveTab(tab)} className="tab-btn" style={{
+                      background: activeTab===tab ? "white" : "transparent",
+                      color: activeTab===tab ? "var(--accent)" : "var(--text2)",
+                      boxShadow: activeTab===tab ? "0 1px 3px rgba(0,0,0,.1)" : "none",
                     }}>{label}</button>
                   ))}
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+              <div className="header-status">
                 <span className={`data-source-badge ${dataSource}`}>
-                  {dataSource === "live" ? "🔴 Datos en vivo" : "💾 Datos cacheados"}
+                  {dataSource==="live" ? "🔴 En vivo" : "💾 Caché"}
                 </span>
-                {loading && <span style={{ fontSize: 12, color: "var(--text2)" }}>Actualizando...</span>}
+                {loading && <span style={{fontSize:11,color:"var(--text2)"}}>Actualizando…</span>}
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+              <div className="header-actions">
                 {selectedForComparison.length > 0 && (
-                  <>
-                    <button
-                      onClick={() => setShowComparisonModal(true)}
-                      disabled={selectedForComparison.length < 2}
-                      style={{
-                        border: "none",
-                        background: selectedForComparison.length >= 2 ? "var(--accent)" : "#d0d5dd",
-                        color: "white", borderRadius: 8, padding: "8px 12px",
-                        cursor: selectedForComparison.length >= 2 ? "pointer" : "not-allowed",
-                        fontSize: 12, fontWeight: 700,
-                      }}
-                    >Comparar ({selectedForComparison.length})</button>
-                    <button onClick={() => setDrawerMinimized(!drawerMinimized)} style={{
-                      border: "1px solid var(--border)", background: "white", borderRadius: 8,
-                      padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600,
-                    }}>{drawerMinimized ? "Ocultar panel" : "Mostrar panel"}</button>
-                  </>
+                  <button onClick={() => setShowComparisonModal(true)}
+                    disabled={selectedForComparison.length < 2}
+                    style={{
+                      border: "none", borderRadius: 8, padding: "8px 12px",
+                      background: selectedForComparison.length>=2 ? "var(--accent)" : "#d0d5dd",
+                      color: "white", fontSize: 12, fontWeight: 700,
+                      cursor: selectedForComparison.length>=2 ? "pointer" : "not-allowed",
+                    }}>
+                    ⚖️ {selectedForComparison.length}
+                  </button>
                 )}
-                {/* Cart button */}
-                <button onClick={() => { if(!user){setAuthMode("login");setShowAuth(true);}else setShowCart(true); }} style={{
-                  position: "relative", border: "1px solid var(--border)", background: "white",
-                  borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 13, fontWeight: 600,
-                  display: "flex", alignItems: "center", gap: 5,
-                }}>
+                <button onClick={() => { if(!user){setAuthMode("login");setShowAuth(true);}else setShowCart(true); }}
+                  style={{ position:"relative", border:"1px solid var(--border)", background:"white",
+                    borderRadius:8, padding:"8px 12px", cursor:"pointer", fontSize:18,
+                    display:"flex", alignItems:"center", minWidth:42, justifyContent:"center" }}>
                   🛒
-                  {cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+                  {cartCount>0 && <span className="cart-badge">{cartCount}</span>}
                 </button>
-                {/* Auth area */}
                 {user ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12, color: "var(--text2)", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</span>
-                    <button onClick={handleLogout} style={{ border: "1px solid var(--border)", background: "white", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 12 }}>Salir</button>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span className="user-email">{user.email}</span>
+                    <button onClick={handleLogout} style={{
+                      border:"1px solid var(--border)", background:"white", borderRadius:8,
+                      padding:"7px 11px", cursor:"pointer", fontSize:12, fontWeight:600, whiteSpace:"nowrap",
+                    }}>Salir</button>
                   </div>
                 ) : (
                   <button onClick={() => { setAuthMode("login"); setShowAuth(true); }} style={{
-                    border: "none", background: "var(--accent)", color: "white",
-                    borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700,
+                    border:"none", background:"var(--accent)", color:"white",
+                    borderRadius:8, padding:"8px 14px", cursor:"pointer", fontSize:13, fontWeight:700, whiteSpace:"nowrap",
                   }}>Ingresar</button>
                 )}
               </div>
             </div>
           </header>
 
-          <main style={{ maxWidth: 1400, margin: "0 auto", padding: 14, width: "100%" }}>
+          <main className="main-inner">
             {activeTab === "locales" ? (
               <StoreMap onSelectStore={(storeId) => { setSelectedStore(storeId); setActiveTab("productos"); }} />
             ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 14 }}>
-            <div>
-              <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
-                <input
-                  type="text"
-                  placeholder="Buscar productos..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                    fontSize: 14,
-                  }}
-                />
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-                  <select
-                    value={selectedStore}
-                    onChange={(e) => setSelectedStore(e.target.value)}
-                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
-                  >
-                    <option value="">Todas las tiendas ({products.length})</option>
-                    {uniqueStores.map((store) => (
-                      <option key={store} value={store}>
-                        {store} ({products.filter((p) => p.store === store).length})
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
-                  >
-                    <option value="">Todas las categorías</option>
-                    {uniqueCategories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={selectedSize}
-                    onChange={(e) => setSelectedSize(e.target.value)}
-                    style={{ border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px", fontSize: 14 }}
-                  >
-                    <option value="">Todos los tamaños</option>
-                    {uniqueSizes.map((size) => (
-                      <option key={size} value={size}>{size}</option>
-                    ))}
-                  </select>
+            <div className="products-layout">
+              <div>
+                <div className="filters-area">
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="🔍  Buscar productos..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                  <div className="filters-row">
+                    <select value={selectedStore} onChange={(e) => setSelectedStore(e.target.value)} className="filter-select">
+                      <option value="">Todas las tiendas ({products.length})</option>
+                      {uniqueStores.map((store) => (
+                        <option key={store} value={store}>{store} ({products.filter(p=>p.store===store).length})</option>
+                      ))}
+                    </select>
+                    <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="filter-select">
+                      <option value="">Todas las categorías</option>
+                      {uniqueCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                    <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="filter-select">
+                      <option value="">Todos los tamaños</option>
+                      {uniqueSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+                    </select>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-                {filteredProducts.length ? (
-                  visibleProducts.map((product) => (
-                    <Card
-                      key={product.id}
-                      product={product}
-                      selected={selectedForComparison.some((p) => p.id === product.id)}
-                      onToggleSelect={toggleCompare}
-                      onOpenHistory={setShowHistoryModal}
-                    />
-                  ))
-                ) : (
-                  <div style={{ gridColumn: "1 / -1", padding: 40, textAlign: "center", color: "var(--text2)" }}>
-                    No se encontraron productos
+                <div className="product-grid">
+                  {filteredProducts.length ? (
+                    visibleProducts.map((product) => (
+                      <Card
+                        key={product.id}
+                        product={product}
+                        selected={selectedForComparison.some((p) => p.id === product.id)}
+                        onToggleSelect={toggleCompare}
+                        onOpenHistory={setShowHistoryModal}
+                      />
+                    ))
+                  ) : (
+                    <div style={{ gridColumn:"1/-1", padding:40, textAlign:"center", color:"var(--text2)" }}>
+                      No se encontraron productos
+                    </div>
+                  )}
+                </div>
+
+                {visibleProducts.length < filteredProducts.length && (
+                  <div style={{ textAlign:"center", marginTop:16 }}>
+                    <button onClick={() => setPage(p=>p+1)} style={{
+                      border:"1px solid var(--accent)", background:"white", color:"var(--accent)",
+                      borderRadius:10, padding:"11px 28px", fontSize:14, fontWeight:600, cursor:"pointer",
+                    }}>
+                      Cargar más ({filteredProducts.length - visibleProducts.length} restantes)
+                    </button>
                   </div>
                 )}
               </div>
-              {visibleProducts.length < filteredProducts.length && (
-                <div style={{ textAlign: "center", marginTop: 16 }}>
-                  <button
-                    onClick={() => setPage(p => p + 1)}
-                    style={{
-                      border: "1px solid var(--accent)",
-                      background: "white",
-                      color: "var(--accent)",
-                      borderRadius: 10,
-                      padding: "10px 24px",
-                      fontSize: 14,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cargar más ({filteredProducts.length - visibleProducts.length} restantes)
-                  </button>
-                </div>
-              )}
+
+              <div className="comparison-drawer-wrap">
+                <ComparisonDrawer
+                  items={selectedForComparison}
+                  open={showComparisonModal}
+                  minimized={drawerMinimized}
+                  onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
+                  onCompare={() => setShowComparisonModal(true)}
+                  onClear={() => setSelectedForComparison([])}
+                  onToggleMinimize={setDrawerMinimized}
+                />
+              </div>
             </div>
+            )}
 
             {showComparisonModal && (
               <ComparisonModal
@@ -1364,24 +1372,8 @@
                 onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
               />
             )}
-
             {showHistoryModal && (
-              <HistoryModal
-                product={showHistoryModal}
-                onClose={() => setShowHistoryModal(null)}
-              />
-            )}
-
-            <ComparisonDrawer
-              items={selectedForComparison}
-              open={showComparisonModal}
-              minimized={drawerMinimized}
-              onRemove={(item) => setSelectedForComparison(selectedForComparison.filter((p) => p.id !== item.id))}
-              onCompare={() => setShowComparisonModal(true)}
-              onClear={() => setSelectedForComparison([])}
-              onToggleMinimize={setDrawerMinimized}
-            />
-            </div>
+              <HistoryModal product={showHistoryModal} onClose={() => setShowHistoryModal(null)} />
             )}
           </main>
 
