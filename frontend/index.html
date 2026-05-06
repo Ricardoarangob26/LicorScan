@@ -858,46 +858,78 @@
       }
 
       function Sparkline({ points }) {
+        const fmt2 = (v) => new Intl.NumberFormat("es-CO", { style:"currency", currency:"COP", minimumFractionDigits:0 }).format(v||0);
+
         if (!Array.isArray(points) || points.length < 2) {
-          return <div style={{ fontSize: 12, color: "var(--text2)" }}>Sin datos suficientes</div>;
+          return <div style={{ fontSize:12, color:"var(--text2)", padding:"12px 0", textAlign:"center" }}>Sin datos de historial</div>;
         }
 
-        const prices = points.map(p => p.price || 0).filter(p => p > 0);
-        if (prices.length === 0) return null;
+        const validPts = points.filter(p => p.price > 0);
+        if (validPts.length < 2) return null;
 
-        const minPrice = Math.min(...prices);
-        const maxPrice = Math.max(...prices);
-        const range = maxPrice - minPrice || 1;
-        
-        const width = 100 * (points.length - 1);
-        const svgHeight = 40;
-        const chartHeight = 30;
-        const padding = 5;
+        const prices  = validPts.map(p => p.price);
+        const minP    = Math.min(...prices);
+        const maxP    = Math.max(...prices);
+        const range   = maxP - minP || 1;
+        const W       = 600;
+        const H       = 80;
+        const padX    = 8;
+        const padY    = 14;
+        const innerW  = W - padX * 2;
+        const innerH  = H - padY * 2;
+        const lastPt  = validPts[validPts.length - 1];
+        const firstPt = validPts[0];
+        const trend   = lastPt.price < firstPt.price ? "#067647" : lastPt.price > firstPt.price ? "#b42318" : "var(--text2)";
 
-        const pathData = points
-          .map((p, i) => {
-            const x = (i / (points.length - 1)) * width;
-            const price = p.price || minPrice;
-            const y = svgHeight - padding - ((price - minPrice) / range) * chartHeight;
-            return `${x},${y}`;
-          })
-          .join(' L ');
+        const toX = (i) => padX + (i / (validPts.length - 1)) * innerW;
+        const toY = (price) => padY + innerH - ((price - minP) / range) * innerH;
+
+        const linePath = validPts.map((p, i) => `${i===0?"M":"L"}${toX(i).toFixed(1)},${toY(p.price).toFixed(1)}`).join(" ");
+        const areaPath = linePath + ` L${toX(validPts.length-1).toFixed(1)},${(H-1).toFixed(1)} L${padX},${(H-1).toFixed(1)} Z`;
+
+        const [hovered, setHovered] = useState(null);
 
         return (
-          <svg
-            width="100%"
-            height={svgHeight}
-            viewBox={`0 0 ${width} ${svgHeight}`}
-            style={{ border: "1px solid var(--border)", borderRadius: 8 }}
-          >
-            <polyline
-              points={pathData}
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="2"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
+          <div style={{ position:"relative" }}>
+            <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ borderRadius:10, overflow:"visible", display:"block" }}
+              onMouseLeave={() => setHovered(null)}>
+              {/* Área bajo la línea */}
+              <defs>
+                <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={trend} stopOpacity="0.18"/>
+                  <stop offset="100%" stopColor={trend} stopOpacity="0"/>
+                </linearGradient>
+              </defs>
+              <path d={areaPath} fill="url(#sparkGrad)" />
+              {/* Línea principal */}
+              <path d={linePath} fill="none" stroke={trend} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              {/* Puntos */}
+              {validPts.map((p, i) => (
+                <circle key={i}
+                  cx={toX(i)} cy={toY(p.price)} r={hovered===i ? 5 : 3.5}
+                  fill={trend} stroke="var(--surface)" strokeWidth="2"
+                  style={{ cursor:"pointer", transition:"r .1s" }}
+                  onMouseEnter={() => setHovered(i)}
+                />
+              ))}
+              {/* Etiqueta min/max */}
+              <text x={padX} y={toY(maxP) - 5} fontSize="9" fill="var(--text2)" textAnchor="start">{fmt2(maxP)}</text>
+              <text x={padX} y={toY(minP) + 12} fontSize="9" fill="var(--text2)" textAnchor="start">{fmt2(minP)}</text>
+            </svg>
+            {/* Tooltip en hover */}
+            {hovered !== null && (
+              <div style={{
+                position:"absolute", top:0,
+                left: `calc(${(toX(hovered)/W*100).toFixed(1)}% - 60px)`,
+                background:"var(--surface)", border:"1px solid var(--border)",
+                borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:700,
+                pointerEvents:"none", whiteSpace:"nowrap", boxShadow:"var(--shadow)", zIndex:10,
+              }}>
+                <div style={{color:"var(--text2)"}}>{validPts[hovered].date}</div>
+                <div style={{color:trend}}>{fmt2(validPts[hovered].price)}</div>
+              </div>
+            )}
+          </div>
         );
       }
 
@@ -909,6 +941,18 @@
       }
 
       function Card({ product, selected, onToggleSelect, onOpenHistory }) {
+        const [added, setAdded] = useState(false);
+        const addingRef = useRef(false);
+
+        function handleAddToCart(e) {
+          e.stopPropagation();
+          if (addingRef.current) return;
+          addingRef.current = true;
+          addToCart(product);
+          setAdded(true);
+          setTimeout(() => { setAdded(false); addingRef.current = false; }, 1200);
+        }
+
         const stats = getHistoryStats(product);
         const pricing = getPricingContext(product);
         const signalSummary = formatEventSignals(pricing.signals);
@@ -993,9 +1037,11 @@
             <div style={{ marginTop:"auto", paddingTop:8, borderTop:"1px solid var(--border)" }}>
               <strong style={{ fontFamily:"Sora", color:"var(--accent)", fontSize:20, display:"block", marginBottom:8 }}>{fmt(product.price)}</strong>
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
-                <button onClick={(e)=>{e.stopPropagation();addToCart(product);}} className="card-btn" style={{
-                  color:"white", background:"#067647", border:"none", gridColumn:"1/-1",
-                }}>🛒 Agregar al carrito</button>
+                <button onClick={handleAddToCart} className="card-btn" style={{
+                  color:"white", background: added ? "#0a5c38" : "#067647", border:"none", gridColumn:"1/-1",
+                  transition:"background .2s, transform .1s",
+                  transform: added ? "scale(0.97)" : "scale(1)",
+                }}>{added ? "✓ Agregado" : "🛒 Agregar al carrito"}</button>
                 <button onClick={(e)=>{e.stopPropagation();onToggleSelect(product);}} className="card-btn" style={{
                   color: selected?"white":"var(--accent)",
                   background: selected?"var(--accent)":"white",
