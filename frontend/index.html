@@ -22,6 +22,7 @@
     :root {
       --bg: oklch(97.5% 0.006 85);
       --surface: #fff;
+      --surface-2: #f4f4f5;
       --border: oklch(88% 0.008 80);
       --text: oklch(18% 0.01 260);
       --text2: oklch(45% 0.01 260);
@@ -30,7 +31,18 @@
       --radius: 14px;
       --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08);
     }
-    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); }
+    [data-theme="dark"] {
+      --bg: oklch(13% 0.008 265);
+      --surface: oklch(17.5% 0.01 265);
+      --surface-2: oklch(22% 0.01 265);
+      --border: oklch(30% 0.012 265);
+      --text: oklch(93% 0.005 265);
+      --text2: oklch(60% 0.01 265);
+      --accent: oklch(65% 0.2 250);
+      --accent-light: oklch(20% 0.08 245);
+      --shadow: 0 1px 4px rgba(0,0,0,.35), 0 8px 24px rgba(0,0,0,.45);
+    }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); transition: background .2s, color .2s; }
     a { color: inherit; }
     input, select, button { font-family: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
@@ -71,16 +83,41 @@
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
     .filter-select {
       border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px 12px; font-size: 14px; width: 100%; background: white;
+      padding: 10px 12px; font-size: 14px; width: 100%;
+      background-color: var(--surface); color: var(--text);
       appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23888' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
       background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px;
     }
     .search-input {
       border: 1px solid var(--border); border-radius: 10px;
       padding: 11px 14px; font-size: 15px; width: 100%;
-      outline: none; transition: border-color .15s;
+      background: var(--surface); color: var(--text);
+      outline: none; transition: border-color .15s, background .2s;
     }
     .search-input:focus { border-color: var(--accent); }
+    /* Dark mode: force surface bg on plain white buttons/inputs */
+    [data-theme="dark"] button:not([class*="accent"]):not([style*="#067647"]):not([style*="var(--accent)"]) {
+      background-color: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    /* Avatar */
+    .user-avatar {
+      width: 32px; height: 32px; border-radius: 50%; overflow: hidden; flex-shrink: 0;
+      border: 2px solid var(--border); display: flex; align-items: center; justify-content: center;
+    }
+    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .user-avatar-placeholder {
+      width: 100%; height: 100%; background: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-weight: 700; font-size: 13px; font-family: 'Sora', sans-serif;
+    }
+    /* Dark mode toggle */
+    .theme-btn {
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+    }
 
     /* ── Cards ──────────────────────────────────────────── */
     .product-card { transition: transform .15s ease, box-shadow .15s ease; }
@@ -287,7 +324,7 @@
 
       return (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:18}} onClick={onClose}>
-          <div style={{width:"min(420px,100%)",background:"white",borderRadius:16,boxShadow:"var(--shadow)",padding:24}} onClick={e=>e.stopPropagation()}>
+          <div style={{width:"min(420px,100%)",background:"var(--surface)",borderRadius:16,boxShadow:"var(--shadow)",padding:24}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <h2 style={{fontFamily:"Sora",fontSize:20,fontWeight:700}}>{mode==="login"?"Iniciar sesión":"Crear cuenta"}</h2>
               <button onClick={onClose} style={{border:"none",background:"none",cursor:"pointer",fontSize:24}}>×</button>
@@ -524,7 +561,31 @@
       return m[2] === 'L' ? parseFloat(m[1]) * 1000 : parseFloat(m[1]);
     }
 
+    function UserAvatar({ user }) {
+      const avatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture;
+      const name   = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || "?";
+      const initial = name[0].toUpperCase();
+      return (
+        <div className="user-avatar" title={name}>
+          {avatar
+            ? <img src={avatar} alt={name} onError={e => { e.target.style.display="none"; e.target.nextSibling.style.display="flex"; }} />
+            : null}
+          <div className="user-avatar-placeholder" style={{display: avatar ? "none" : "flex"}}>{initial}</div>
+        </div>
+      );
+    }
+
     function App() {
+      // ── Dark mode ───────────────────────────────────────────────────────────
+      const [darkMode, setDarkMode] = useState(() => {
+        const s = localStorage.getItem("ls-theme");
+        return s ? s === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      });
+      useEffect(() => {
+        document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+        localStorage.setItem("ls-theme", darkMode ? "dark" : "light");
+      }, [darkMode]);
+
       // ── Auth & Cart state ───────────────────────────────────────────────────
       const [user, setUser] = useState(null);
       const [showAuth, setShowAuth] = useState(false);
@@ -558,7 +619,7 @@
       function CartPanel() {
         return (
           <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:90,display:"flex",alignItems:"flex-start",justifyContent:"flex-end"}} onClick={()=>setShowCart(false)}>
-            <div style={{width:"min(440px,100vw)",height:"100vh",background:"white",display:"flex",flexDirection:"column",boxShadow:"-4px 0 20px rgba(0,0,0,.12)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{width:"min(440px,100vw)",height:"100vh",background:"var(--surface)",display:"flex",flexDirection:"column",boxShadow:"-4px 0 20px rgba(0,0,0,.3)"}} onClick={e=>e.stopPropagation()}>
               <div style={{padding:"16px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
                 <div>
                   <h2 style={{fontFamily:"Sora",fontSize:18,fontWeight:700}}>Carrito de compra</h2>
@@ -580,7 +641,7 @@
                       const sub=(product.price||0)*qty;
                       return (
                         <div key={product.id} style={{border:"1px solid var(--border)",borderRadius:12,padding:12,display:"grid",gridTemplateColumns:"56px 1fr auto",gap:10,alignItems:"center"}}>
-                          <div style={{width:56,height:56,borderRadius:8,background:"#f8f8f8",border:"1px solid var(--border)",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          <div style={{width:56,height:56,borderRadius:8,background:"var(--surface-2)",border:"1px solid var(--border)",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
                             {product.img?<img src={product.img} alt={product.title} style={{width:"100%",height:"100%",objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>:<span style={{fontSize:22}}>🍾</span>}
                           </div>
                           <div>
@@ -892,7 +953,7 @@
               aspectRatio: "1/1",
               borderRadius: 10,
               border: "1px solid var(--border)",
-              background: "#f8f8f8",
+              background: "var(--surface-2)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -918,7 +979,7 @@
               border: "1px solid var(--border)",
               borderRadius: 10,
               padding: 8,
-              background: "#fafafa",
+              background: "var(--surface-2)",
               display: "grid",
               gap: 4,
             }}>
@@ -1074,7 +1135,7 @@
               width: "min(1100px, 100%)",
               maxHeight: "90vh",
               overflowY: "auto",
-              background: "white",
+              background: "var(--surface)",
               borderRadius: 16,
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
@@ -1116,7 +1177,7 @@
                   const stats = getHistoryStats(item);
                   const isCheapest = (item.price || 0) === min;
                   return (
-                    <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: isCheapest ? "var(--accent-light)" : "white" }}>
+                    <div key={item.id} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 12, background: isCheapest ? "var(--accent-light)" : "var(--surface)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                         <StoreBadge id={item.store} label={item.store_name || item.store} />
                         <button onClick={() => onRemove(item)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text2)", fontSize: 18 }}>×</button>
@@ -1156,7 +1217,7 @@
           }} onClick={onClose}>
             <div style={{
               width: "min(760px, 100%)",
-              background: "white",
+              background: "var(--surface)",
               borderRadius: 16,
               border: "1px solid var(--border)",
               boxShadow: "var(--shadow)",
@@ -1198,7 +1259,7 @@
                 <Sparkline points={stats.points} />
               </div>
 
-              <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "#fbfdff" }}>
+              <div style={{ marginTop: 12, border: "1px solid var(--border)", borderRadius: 10, padding: 10, background: "var(--surface-2)" }}>
                 <p style={{ fontSize: 11, color: "var(--text2)" }}>Lectura de descuento</p>
                 <p style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
                   {pricing.has_discount ? `Descuento estimado de ${pricing.discount_pct != null ? pricing.discount_pct.toFixed(2) : "0.00"}% sobre ${fmt(pricing.reference_price)}` : "Sin descuento claro en el historial observado"}
@@ -1264,19 +1325,26 @@
                     ⚖️ {selectedForComparison.length}
                   </button>
                 )}
+                {/* Cart */}
                 <button onClick={() => { if(!user){setAuthMode("login");setShowAuth(true);}else setShowCart(true); }}
-                  style={{ position:"relative", border:"1px solid var(--border)", background:"white",
+                  style={{ position:"relative", border:"1px solid var(--border)", background:"var(--surface)",
                     borderRadius:8, padding:"8px 12px", cursor:"pointer", fontSize:18,
-                    display:"flex", alignItems:"center", minWidth:42, justifyContent:"center" }}>
+                    display:"flex", alignItems:"center", minWidth:42, justifyContent:"center", color:"var(--text)" }}>
                   🛒
                   {cartCount>0 && <span className="cart-badge">{cartCount}</span>}
                 </button>
+                {/* Dark mode toggle */}
+                <button className="theme-btn" onClick={() => setDarkMode(d => !d)} title={darkMode ? "Modo claro" : "Modo oscuro"}>
+                  {darkMode ? "☀️" : "🌙"}
+                </button>
+                {/* Auth */}
                 {user ? (
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <span className="user-email">{user.email}</span>
+                    <UserAvatar user={user} />
+                    <span className="user-email">{user.user_metadata?.name || user.email}</span>
                     <button onClick={handleLogout} style={{
-                      border:"1px solid var(--border)", background:"white", borderRadius:8,
-                      padding:"7px 11px", cursor:"pointer", fontSize:12, fontWeight:600, whiteSpace:"nowrap",
+                      border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)",
+                      borderRadius:8, padding:"7px 11px", cursor:"pointer", fontSize:12, fontWeight:600, whiteSpace:"nowrap",
                     }}>Salir</button>
                   </div>
                 ) : (
