@@ -569,20 +569,50 @@
       return result;
     }
 
+    // Parse Spanish number: "1.100" → 1100 (period = thousands sep), "1,5" → 1.5
+    function parseNum(s) {
+      if (/^\d+\.\d{3}$/.test(s)) return parseFloat(s.replace('.', ''));
+      return parseFloat(s.replace(',', '.'));
+    }
+
     function extractSize(title) {
       if (!title) return null;
       const t = title.toLowerCase();
-      const mlMatch = t.match(/(\d+(?:[.,]\d+)?)\s*ml\b/);
-      if (mlMatch) return `${parseFloat(mlMatch[1].replace(',', '.'))} ml`;
+      // Gramos: "100gr", "100 gr", "100  gr", "100g", "115G", "115GR", "1.100 Gr"
+      const grMatch = t.match(/(\d+(?:[.,]\d*)?)\s*gr?\b/);
+      if (grMatch) {
+        const v = parseNum(grMatch[1]);
+        if (isNaN(v) || v <= 0) return null;
+        return v >= 1000 ? `${+(v/1000).toFixed(3)} kg` : `${v} g`;
+      }
+      // Kilogramos explícito
+      const kgMatch = t.match(/(\d+(?:[.,]\d+)?)\s*kg\b/);
+      if (kgMatch) { const v = parseNum(kgMatch[1]); return isNaN(v) ? null : `${v} kg`; }
+      // Mililitros: "750ml", "750 ml", "750  ML", "1000ml" → "1 L"
+      const mlMatch = t.match(/(\d+(?:[.,]\d*)?)\s*ml\b/);
+      if (mlMatch) {
+        const v = parseNum(mlMatch[1]);
+        if (isNaN(v) || v <= 0) return null;
+        return v >= 1000 ? `${+(v/1000).toFixed(3)} L` : `${v} ml`;
+      }
+      // Litros: "1.5L", "1.5lt", "1L", "750lt"
       const lMatch = t.match(/(\d+(?:[.,]\d+)?)\s*(?:l|lt|litros?)\b/);
-      if (lMatch) return `${parseFloat(lMatch[1].replace(',', '.'))} L`;
+      if (lMatch) { const v = parseNum(lMatch[1]); return isNaN(v) ? null : `${v} L`; }
       return null;
     }
 
+    const sizeIsVolume = s => s && (s.endsWith(' ml') || s.endsWith(' L'));
+    const sizeIsWeight = s => s && (s.endsWith(' g')  || s.endsWith(' kg'));
+
     function sizeToMl(size) {
-      const m = size.match(/([\d.]+)\s*(ml|L)/);
+      const m = size?.match(/([\d.]+)\s*(ml|L)/);
       if (!m) return 0;
       return m[2] === 'L' ? parseFloat(m[1]) * 1000 : parseFloat(m[1]);
+    }
+    function sizeToGrams(size) {
+      const m = size?.match(/([\d.]+)\s*(g|kg)/);
+      if (!m) return 0;
+      return m[2] === 'kg' ? parseFloat(m[1]) * 1000 : parseFloat(m[1]);
     }
 
     function UserAvatar({ user }) {
@@ -784,10 +814,19 @@
         [products]
       );
 
-      const uniqueSizes = useMemo(() => {
-        const sizes = [...new Set(products.map(p => extractSize(p.title)).filter(Boolean))];
-        return sizes.sort((a, b) => sizeToMl(a) - sizeToMl(b));
-      }, [products]);
+      // Reset tamaño cuando cambia la categoría (las unidades cambian)
+      useEffect(() => { setSelectedSize(""); }, [selectedCategory]);
+
+      const { volumeSizes, weightSizes } = useMemo(() => {
+        const base = selectedCategory
+          ? products.filter(p => p.category === selectedCategory)
+          : products;
+        const all = [...new Set(base.map(p => extractSize(p.title)).filter(Boolean))];
+        return {
+          volumeSizes: all.filter(sizeIsVolume).sort((a,b) => sizeToMl(a)    - sizeToMl(b)),
+          weightSizes: all.filter(sizeIsWeight).sort((a,b) => sizeToGrams(a) - sizeToGrams(b)),
+        };
+      }, [products, selectedCategory]);
 
       const toggleCompare = (product) => {
         if (selectedForComparison.find((p) => p.id === product.id)) {
@@ -1449,8 +1488,23 @@
                       {uniqueCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                     <select value={selectedSize} onChange={(e) => setSelectedSize(e.target.value)} className="filter-select">
-                      <option value="">Todos los tamaños</option>
-                      {uniqueSizes.map((size) => <option key={size} value={size}>{size}</option>)}
+                      <option value="">
+                        {volumeSizes.length && !weightSizes.length ? "Todos los ml / L" :
+                         weightSizes.length && !volumeSizes.length ? "Todos los g / kg" :
+                         "Todos los tamaños"}
+                      </option>
+                      {volumeSizes.length > 0 && weightSizes.length > 0 ? (
+                        <>
+                          <optgroup label="Volumen (bebidas)">
+                            {volumeSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                          </optgroup>
+                          <optgroup label="Peso (snacks)">
+                            {weightSizes.map(s => <option key={s} value={s}>{s}</option>)}
+                          </optgroup>
+                        </>
+                      ) : (
+                        [...volumeSizes, ...weightSizes].map(s => <option key={s} value={s}>{s}</option>)
+                      )}
                     </select>
                   </div>
                 </div>
