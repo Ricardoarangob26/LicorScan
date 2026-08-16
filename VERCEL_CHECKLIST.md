@@ -32,8 +32,8 @@
 ### Environment Variables in Vercel
 1. [ ] Go to Project Settings → "Environment Variables"
 2. [ ] Add for **Production** environment:
-   - `SUPABASE_URL` = `https://bwxxifwqnkrfbegoycod.supabase.co`
-   - `SUPABASE_ANON` = `sb_publishable_3g_CcUcp3WI890zg0IGPeg_zI9j1QCq` (public key)
+   - `SUPABASE_URL` = `https://ymtknhckmqdkiyvabyno.supabase.co`
+   - `SUPABASE_ANON` = `sb_publishable_n8rFO3J9UHS_wcZuF6KEUQ_fBS8RtkX` (public key)
 3. [ ] Redeploy to apply env vars: "Deployments" tab → click latest → "Redeploy"
 
 ### GitHub Secrets for CI/CD

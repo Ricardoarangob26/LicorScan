@@ -17,7 +17,7 @@ In your Vercel project dashboard (`vercel.com/dashboard`):
 
 | Variable | Value | Environment |
 |----------|-------|------------|
-| `SUPABASE_URL` | `https://bwxxifwqnkrfbegoycod.supabase.co` | Production |
+| `SUPABASE_URL` | `https://ymtknhckmqdkiyvabyno.supabase.co` | Production |
 | `SUPABASE_ANON` | `sb_publishable_...` (public key) | Production |
 | `SUPABASE_KEY` | `sb_secret_...` (optional, for backend jobs) | Production |
 

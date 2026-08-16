@@ -12,3 +12,4 @@ data/raw/*.jsonl
 playwright-report/
 test-results/
 .pytest_cache/
+*.log

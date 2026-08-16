@@ -59,7 +59,7 @@ Create `/opt/LicorScan/.env` with production credentials:
 
 ```bash
 # Supabase (NEVER commit this file)
-SUPABASE_URL=https://bwxxifwqnkrfbegoycod.supabase.co
+SUPABASE_URL=https://ymtknhckmqdkiyvabyno.supabase.co
 SUPABASE_ANON=sb_publishable_...
 SUPABASE_KEY=sb_secret_...
 

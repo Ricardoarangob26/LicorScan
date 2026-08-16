@@ -46,7 +46,7 @@ Cambiar a la versión que lee datos en vivo desde Supabase (en lugar de archivo 
 1. En tu dashboard de Vercel, abre el proyecto
 2. Ve a **Settings → Environment Variables**
 3. Asegúrate de que estas variables existan:
-   - `REACT_APP_SUPABASE_URL` = `https://bwxxifwqnkrfbegoycod.supabase.co`
+   - `REACT_APP_SUPABASE_URL` = `https://ymtknhckmqdkiyvabyno.supabase.co`
    - `REACT_APP_SUPABASE_ANON` = `sb_publishable_...` (tu clave pública)
 
 4. En tu repositorio local, renombra o reemplaza el frontend:

@@ -12,6 +12,11 @@ This script reads the JS file produced by the front-end build, extracts
 the `window.__CATALOG__` JSON and upserts rows into a `products` table.
 It uses the Supabase REST API directly, so it works with the newer API
 keys exposed in the dashboard.
+
+If SUPABASE_DB_URL is set (a direct Postgres connection string) and
+--via-db is passed, it upserts straight over Postgres instead. Useful
+when RLS only grants public SELECT on `products` and no service_role
+key is available for REST writes.
 """
 import argparse
 import json
@@ -76,21 +81,44 @@ def rest_upsert_batch(base_url: str, api_key: str, table: str, batch: list[dict]
         raise RuntimeError(f"Supabase REST error {exc.code}: {body}") from exc
 
 
+def db_upsert_batch(dsn: str, table: str, batch: list[dict]) -> None:
+    import psycopg2
+    import psycopg2.extras
+
+    columns = ["id", "store", "store_name", "title", "price", "img", "url", "category", "pricing_context", "history", "raw"]
+    json_cols = {"pricing_context", "history", "raw"}
+    rows = [
+        tuple(
+            psycopg2.extras.Json(rec[c]) if c in json_cols else rec[c]
+            for c in columns
+        )
+        for rec in batch
+    ]
+    update_clause = ", ".join(f"{c} = excluded.{c}" for c in columns if c != "id")
+    query = (
+        f"insert into {table} ({', '.join(columns)}) values %s "
+        f"on conflict (id) do update set {update_clause}"
+    )
+    conn = psycopg2.connect(dsn, connect_timeout=15)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(cur, query, rows)
+    finally:
+        conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", default="frontend/catalog-data.js")
     parser.add_argument("--table", default="products")
     parser.add_argument("--batch", type=int, default=200, help="Batch size for upsert")
+    parser.add_argument("--via-db", action="store_true", help="Upsert over direct Postgres connection (SUPABASE_DB_URL) instead of REST")
     args = parser.parse_args()
 
     env_path = Path(".env")
     if env_path.exists():
         load_dotenv(dotenv_path=env_path)
-
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")
-    SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise SystemExit("Missing SUPABASE_URL or SUPABASE_KEY in environment (.env)")
 
     catalog_path = Path(args.catalog)
     if not catalog_path.exists():
@@ -102,15 +130,27 @@ def main():
 
     records = [normalize_product(p) for p in products]
 
-    # Upsert in batches
-    for i in range(0, len(records), args.batch):
-        batch = records[i : i + args.batch]
-        print(f"Upserting batch {i}..{i+len(batch)-1}")
-        status, body = rest_upsert_batch(SUPABASE_URL, SUPABASE_KEY, args.table, batch)
-        if status not in (200, 201):
-            raise RuntimeError(f"Unexpected Supabase status {status}: {body}")
-        if i == 0:
-            print(f"First batch response status={status}")
+    if args.via_db:
+        dsn = os.environ.get("SUPABASE_DB_URL")
+        if not dsn:
+            raise SystemExit("Missing SUPABASE_DB_URL in environment (.env)")
+        for i in range(0, len(records), args.batch):
+            batch = records[i : i + args.batch]
+            print(f"Upserting batch {i}..{i+len(batch)-1} (db)")
+            db_upsert_batch(dsn, args.table, batch)
+    else:
+        SUPABASE_URL = os.environ.get("SUPABASE_URL")
+        SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise SystemExit("Missing SUPABASE_URL or SUPABASE_KEY in environment (.env)")
+        for i in range(0, len(records), args.batch):
+            batch = records[i : i + args.batch]
+            print(f"Upserting batch {i}..{i+len(batch)-1}")
+            status, body = rest_upsert_batch(SUPABASE_URL, SUPABASE_KEY, args.table, batch)
+            if status not in (200, 201):
+                raise RuntimeError(f"Unexpected Supabase status {status}: {body}")
+            if i == 0:
+                print(f"First batch response status={status}")
 
     print("Done.")
 
