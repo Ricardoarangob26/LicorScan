@@ -40,7 +40,7 @@ class ScrapedProduct:
     """
     store: str
     name: str
-    price_cop: float | None  # None si no se pudo parsear
+    price_cop: float | None  # None si no se pudo parsear; precio realmente cobrado (con descuento si aplica)
     url: str
     image_url: str | None = None
     category: str | None = None
@@ -49,6 +49,7 @@ class ScrapedProduct:
     source_page_url: str | None = None
     scraped_at: str = ""
     scraped_date: str = ""
+    list_price_cop: float | None = None  # precio de lista/antes del descuento; None si no hay promo
     raw: dict[str, Any] | None = None  # datos crudos del XHR/DOM para debug
 
     def __post_init__(self) -> None:

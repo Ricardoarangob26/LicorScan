@@ -200,6 +200,8 @@ def build_pricing_context(
     history: list[dict[str, Any]],
     *,
     home_matches: list[dict[str, Any]] | None = None,
+    current_price: float | None = None,
+    list_price: float | None = None,
 ) -> dict[str, Any]:
     points: list[dict[str, Any]] = []
     for entry in history:
@@ -211,6 +213,22 @@ def build_pricing_context(
 
     points.sort(key=lambda item: item["date"])
     if not points:
+        # Sin historial todavía: si el sitio muestra un precio de lista
+        # tachado en el momento del scrape, esa es la única señal de
+        # promoción disponible (no depende de acumular varios días).
+        if list_price is not None and current_price is not None and list_price > current_price:
+            discount_amount = list_price - current_price
+            return {
+                "has_discount": True,
+                "reference_price": list_price,
+                "current_price": current_price,
+                "discount_amount": round(discount_amount, 2),
+                "discount_pct": round(discount_amount / list_price * 100, 2),
+                "discount_start": None,
+                "discount_observed_until": None,
+                "reference_price_note": "precio de lista observado en el sitio",
+                "signals": [],
+            }
         return {
             "has_discount": False,
             "reference_price": None,
@@ -228,6 +246,12 @@ def build_pricing_context(
     current_price = prices[-1]
     discount_threshold = reference_price * 0.98
     has_discount = reference_price > 0 and current_price < discount_threshold
+
+    if not has_discount and list_price is not None and list_price > current_price * 1.02:
+        # El historial no muestra bajada (ej. primera vez que se ve una
+        # promo), pero el sitio sí marca precio de lista más alto ahora.
+        has_discount = True
+        reference_price = list_price
 
     discount_start: date | None = None
     discount_observed_until: date | None = None

@@ -24,6 +24,7 @@ class FrontProduct:
     store_name: str
     category: str
     price: float
+    list_price: float | None
     img: str | None
     url: str
     scraped_date: str | None
@@ -115,6 +116,11 @@ def _load_products_from_file(
             if url in seen_urls:
                 continue
 
+            list_price_raw = item.get("list_price_cop")
+            list_price = float(list_price_raw) if list_price_raw is not None else None
+            if list_price is not None and list_price <= float(price):
+                list_price = None
+
             seen_urls.add(url)
             history_key = (url, name)
             history = history_map.get(history_key, [])
@@ -126,11 +132,17 @@ def _load_products_from_file(
                     store_name=(item.get("store_name") or item.get("store") or "").strip(),
                     category=_title_case_category(item.get("category")),
                     price=float(price),
+                    list_price=list_price,
                     img=item.get("image_url"),
                     url=url,
                     scraped_date=item.get("scraped_date"),
                     history=history,
-                    pricing_context=build_pricing_context(history, home_matches=real_cartagena_matches),
+                    pricing_context=build_pricing_context(
+                        history,
+                        home_matches=real_cartagena_matches,
+                        current_price=float(price),
+                        list_price=list_price,
+                    ),
                 )
             )
             next_id += 1

@@ -43,6 +43,7 @@ def normalize_product(p: dict) -> dict:
         "store_name": p.get("store_name"),
         "title": p.get("title"),
         "price": p.get("price"),
+        "list_price": p.get("list_price"),
         "img": p.get("img"),
         "url": p.get("url"),
         "category": p.get("category"),
@@ -85,7 +86,7 @@ def db_upsert_batch(dsn: str, table: str, batch: list[dict]) -> None:
     import psycopg2
     import psycopg2.extras
 
-    columns = ["id", "store", "store_name", "title", "price", "img", "url", "category", "pricing_context", "history", "raw"]
+    columns = ["id", "store", "store_name", "title", "price", "list_price", "img", "url", "category", "pricing_context", "history", "raw"]
     json_cols = {"pricing_context", "history", "raw"}
     rows = [
         tuple(

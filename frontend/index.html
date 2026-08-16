@@ -203,7 +203,7 @@
 
         const requests = Array.from({ length: pages }, (_, i) =>
           fetch(
-            `${SUPABASE_URL}/rest/v1/products?select=id,store,store_name,title,price,img,url,category,history&limit=${pageSize}&offset=${i * pageSize}`,
+            `${SUPABASE_URL}/rest/v1/products?select=id,store,store_name,title,price,list_price,img,url,category,history&limit=${pageSize}&offset=${i * pageSize}`,
             {
               headers: {
                 apikey: SUPABASE_ANON,
@@ -904,11 +904,11 @@
         let reference_price = product.price;
         let discount_start = null;
         let discount_observed_until = null;
-        
+
         if (history.length >= 2) {
           const latest = history[history.length - 1]?.price ?? product.price;
           const previous = history[history.length - 2]?.price ?? latest;
-          
+
           if (latest < previous) {
             signals.push("📉 Bajada de precio");
             has_discount = true;
@@ -916,8 +916,38 @@
             reference_price = previous;
           }
         }
-        
-        return { signals, has_discount, discount_pct, reference_price, discount_start, discount_observed_until };
+
+        // Precio de lista tachado que la propia tienda muestra en el
+        // momento del scrape (promoción real, no depende de historial).
+        const listPrice = product.list_price;
+        if (listPrice != null && listPrice > product.price) {
+          const onSitePct = ((listPrice - product.price) / listPrice) * 100;
+          if (!has_discount || listPrice > reference_price) {
+            has_discount = true;
+            discount_pct = onSitePct;
+            reference_price = listPrice;
+          }
+          signals.push("⭐ En promoción en la tienda");
+        }
+
+        return { signals, has_discount, discount_pct, reference_price, discount_start, discount_observed_until, listPrice: listPrice > product.price ? listPrice : null };
+      }
+
+      function PriceTag({ price, listPrice, size = 18 }) {
+        const onPromo = listPrice != null && listPrice > price;
+        return (
+          <span style={{ display: "block", marginBottom: 8 }}>
+            {onPromo && (
+              <span style={{ display: "block", fontSize: Math.max(11, size - 8), color: "var(--text2)", textDecoration: "line-through" }}>
+                {fmt(listPrice)}
+              </span>
+            )}
+            <strong style={{ fontFamily: "Sora", color: "var(--accent)", fontSize: size, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {onPromo && <span title="En promoción" aria-label="En promoción">⭐</span>}
+              {fmt(price)}
+            </strong>
+          </span>
+        );
       }
 
       function Sparkline({ points }) {
@@ -1098,7 +1128,7 @@
             </div>
 
             <div style={{ marginTop:"auto", paddingTop:8, borderTop:"1px solid var(--border)" }}>
-              <strong style={{ fontFamily:"Sora", color:"var(--accent)", fontSize:20, display:"block", marginBottom:8 }}>{fmt(product.price)}</strong>
+              <PriceTag price={product.price} listPrice={pricing.listPrice} size={20} />
               <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6 }}>
                 <button onClick={handleAddToCart} className={`btn-cart-add${added?" added":""}`}>
                   {added ? "✓ Agregado" : "🛒 Agregar al carrito"}
@@ -1188,7 +1218,7 @@
                   <div>
                     <StoreBadge id={item.store} label={item.store_name || item.store} />
                     <p style={{ fontSize: 12, marginTop: 5 }}>{item.title}</p>
-                    <p style={{ fontSize: 12, color: "var(--accent)", fontWeight: 700, marginTop: 3 }}>{fmt(item.price)}</p>
+                    <PriceTag price={item.price} listPrice={getPricingContext(item).listPrice} size={12} />
                   </div>
                   <button onClick={() => onRemove(item)} className="btn-s" style={{ width: 26, height: 26 }}>×</button>
                 </div>
@@ -1288,7 +1318,9 @@
                         <button onClick={() => onRemove(item)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--text2)", fontSize: 18 }}>×</button>
                       </div>
                       <h4 style={{ fontSize: 13, marginTop: 8, minHeight: 36 }}>{item.title}</h4>
-                      <p style={{ marginTop: 8, fontFamily: "Sora", fontWeight: 700, color: "var(--accent)", fontSize: 18 }}>{fmt(item.price)}</p>
+                      <div style={{ marginTop: 8 }}>
+                        <PriceTag price={item.price} listPrice={getPricingContext(item).listPrice} size={18} />
+                      </div>
                       {isCheapest && <p style={{ fontSize: 11, color: "#067647", fontWeight: 700 }}>Mas barato</p>}
 
                       <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8, display: "grid", gap: 5 }}>
