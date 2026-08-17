@@ -33,8 +33,19 @@ PAGE_SIZE = 50
 MAX_OFFSET = 2500
 # Tope defensivo: sin esto, una categoría mal configurada pagina sin fin.
 MAX_PAGES_PER_CATEGORY = 120
-# Hasta qué profundidad bajar subdividiendo categorías grandes.
-MAX_SUBDIVISION_DEPTH = 3
+# Hasta cuántos cortes sucesivos hacer al particionar por precio.
+MAX_SUBDIVISION_DEPTH = 6
+# Rango de precios en COP para la partición.
+#
+# El piso es 1, no 0, y eso importa: buena parte del catálogo son fichas
+# sin oferta, que VTEX reporta con precio 0. En Carulla son 2.711 de
+# 4.513 en 'Vinos y licores'. Incluirlas no solo trae basura — hace que
+# la partición no avance, porque todas caen en cualquier rango que
+# empiece en 0. Filtrándolas, la categoría baja de 4.513 a 1.802 y ni
+# siquiera hace falta partirla. De todos modos se descartan al traducir,
+# porque un producto sin precio no sirve para comparar precios.
+MIN_PRICE_COP = 1
+MAX_PRICE_COP = 100_000_000
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -47,7 +58,9 @@ class VTEXAdapter(StoreAdapter):
 
     # ---- HTTP ----
 
-    def _get(self, path: str, params: dict[str, Any] | None = None, timeout: int = 30):
+    def _get(self, path: str, params: list[tuple[str, Any]] | None = None, timeout: int = 30):
+        # Lista de pares, no dict: VTEX admite varios `fq` en la misma
+        # consulta y los combina con AND (categoría + rango de precio).
         query = f"?{urllib.parse.urlencode(params)}" if params else ""
         url = f"{self.config.base_url.rstrip('/')}{path}{query}"
         request = urllib.request.Request(
@@ -71,6 +84,37 @@ class VTEXAdapter(StoreAdapter):
         data, _ = self._get(f"/api/catalog_system/pub/category/tree/{depth}")
         return data
 
+    # ---- Construcción de consultas ----
+
+    def _search_endpoint(self, path: str | None) -> str:
+        base = "/api/catalog_system/pub/products/search"
+        if path:
+            return base + "/" + urllib.parse.quote(path.strip("/"))
+        return base
+
+    def _search_params(
+        self,
+        category_id: int | None,
+        price_range: tuple[int, int] | None,
+        offset: int,
+        limit: int,
+    ) -> list[tuple[str, Any]]:
+        params: list[tuple[str, Any]] = []
+        if category_id is not None:
+            params.append(("fq", f"C:{category_id}"))
+        if price_range is not None:
+            lo, hi = price_range
+            params.append(("fq", f"P:[{lo} TO {hi}]"))
+        params.extend([
+            # Sin `sc` explícito VTEX devuelve un precio base que no es
+            # el que ve el usuario en la web. Verificado en Olímpica:
+            # sin sc -> 16.350, con sc=1 -> 17.175 (el de la página).
+            ("sc", self.config.sales_channel),
+            ("_from", offset),
+            ("_to", offset + limit - 1),
+        ])
+        return params
+
     # ---- Catálogo ----
 
     def fetch_products(self) -> Iterator[NormalizedProduct]:
@@ -79,100 +123,101 @@ class VTEXAdapter(StoreAdapter):
             return
 
         seen_skus: set[str] = set()
+        full_range = (MIN_PRICE_COP, MAX_PRICE_COP)
         for category_id in self.config.category_ids:
-            yield from self._fetch_subdividing(category_id, seen_skus)
+            yield from self._fetch_partitioned(seen_skus, category_id=category_id, price_range=full_range)
         for path in self.config.category_paths:
-            yield from self._fetch_category(seen_skus, path=path)
+            yield from self._fetch_partitioned(seen_skus, path=path, price_range=full_range)
 
-    # ---- Subdivisión automática ----
+    # ---- Partición por rango de precio ----
+    #
+    # Para pasar del tope de 2.500 hay que partir la consulta. Se hace por
+    # precio y no por subcategoría porque los ids de subcategoría no son
+    # fiables entre tiendas: en Carulla las 15 hijas de 'Vinos y licores'
+    # devuelven 0 productos cada una, aunque la madre devuelva 4.513.
+    # El precio, en cambio, lo tiene todo producto y particiona siempre.
 
-    def _category_total(self, category_id: int) -> int | None:
+    def _total_for(
+        self,
+        category_id: int | None = None,
+        path: str | None = None,
+        price_range: tuple[int, int] | None = None,
+    ) -> int | None:
         try:
             _, headers = self._get(
-                "/api/catalog_system/pub/products/search",
-                {"fq": f"C:{category_id}", "sc": self.config.sales_channel, "_from": 0, "_to": 1},
+                self._search_endpoint(path),
+                self._search_params(category_id, price_range, 0, 1),
             )
         except Exception:
             return None
         return _parse_total(headers)
 
-    def _category_tree(self) -> list[dict]:
-        if not hasattr(self, "_tree_cache"):
-            try:
-                self._tree_cache = self.discover_categories(depth=MAX_SUBDIVISION_DEPTH + 1)
-            except Exception as exc:
-                logger.warning(f"[{self.slug}] no se pudo leer el árbol de categorías: {exc!r}")
-                self._tree_cache = []
-        return self._tree_cache
+    @staticmethod
+    def _split_point(lo: int, hi: int) -> int:
+        """Punto medio geométrico.
 
-    def _children_of(self, category_id: int) -> list[int]:
-        def walk(nodes: list[dict]) -> list[int] | None:
-            for node in nodes:
-                if node.get("id") == category_id:
-                    return [c["id"] for c in node.get("children") or [] if c.get("id")]
-                found = walk(node.get("children") or [])
-                if found is not None:
-                    return found
-            return None
-
-        return walk(self._category_tree()) or []
-
-    def _fetch_subdividing(
-        self, category_id: int, seen_skus: set[str], depth: int = 0
-    ) -> Iterator[NormalizedProduct]:
-        """Baja a subcategorías cuando la categoría excede el tope de VTEX.
-
-        Sin esto se pierde silenciosamente todo lo que quede más allá del
-        producto 2.500 de una categoría grande.
+        Los precios se concentran en la parte baja del rango, así que un
+        punto medio aritmético dejaría casi todo de un lado.
         """
-        total = self._category_total(category_id)
+        floor = max(lo, 100)
+        mid = int((floor * hi) ** 0.5)
+        if mid <= lo or mid >= hi:
+            mid = (lo + hi) // 2
+        return mid
+
+    def _fetch_partitioned(
+        self,
+        seen_skus: set[str],
+        category_id: int | None = None,
+        path: str | None = None,
+        price_range: tuple[int, int] | None = None,
+        depth: int = 0,
+    ) -> Iterator[NormalizedProduct]:
+        label = f"cat {category_id}" if category_id is not None else f"ruta '{path}'"
+        total = self._total_for(category_id, path, price_range)
         self._polite_wait()
 
         if total is not None and total > MAX_OFFSET and depth < MAX_SUBDIVISION_DEPTH:
-            children = self._children_of(category_id)
-            if children:
+            lo, hi = price_range or (MIN_PRICE_COP, MAX_PRICE_COP)
+            mid = self._split_point(lo, hi)
+            if lo < mid < hi:
                 logger.info(
-                    f"[{self.slug}] cat {category_id} tiene {total} productos "
-                    f"(tope {MAX_OFFSET}); la parto en {len(children)} subcategorías"
+                    f"[{self.slug}] {label} rango [{lo}, {hi}] tiene {total} productos "
+                    f"(tope {MAX_OFFSET}); lo parto en [{lo}, {mid}] y [{mid}, {hi}]"
                 )
-                for child in children:
-                    yield from self._fetch_subdividing(child, seen_skus, depth + 1)
+                yield from self._fetch_partitioned(seen_skus, category_id, path, (lo, mid), depth + 1)
+                yield from self._fetch_partitioned(seen_skus, category_id, path, (mid, hi), depth + 1)
                 return
+
+        if total is not None and total > MAX_OFFSET:
             logger.warning(
-                f"[{self.slug}] cat {category_id} tiene {total} productos y no tiene "
-                f"subcategorías: se perderán los que pasen de {MAX_OFFSET}"
+                f"[{self.slug}] {label} rango {price_range}: {total} productos y no se puede "
+                f"partir más; se perderán los que pasen de {MAX_OFFSET}"
             )
 
-        yield from self._fetch_category(seen_skus, category_id=category_id)
+        yield from self._fetch_category(
+            seen_skus, category_id=category_id, path=path,
+            price_range=price_range or (MIN_PRICE_COP, MAX_PRICE_COP),
+        )
 
     def _fetch_category(
         self,
         seen_skus: set[str],
         category_id: int | None = None,
         path: str | None = None,
+        price_range: tuple[int, int] | None = None,
     ) -> Iterator[NormalizedProduct]:
         label = f"cat {category_id}" if category_id is not None else f"ruta '{path}'"
-        if path:
-            endpoint = "/api/catalog_system/pub/products/search/" + urllib.parse.quote(path.strip("/"))
-        else:
-            endpoint = "/api/catalog_system/pub/products/search"
+        if price_range:
+            label += f" [{price_range[0]}-{price_range[1]}]"
+        endpoint = self._search_endpoint(path)
 
         offset = 0
         total: int | None = None
         pages = 0
 
         while pages < MAX_PAGES_PER_CATEGORY:
-            params: dict[str, Any] = {
-                # Sin `sc` explícito VTEX devuelve un precio base que no es
-                # el que ve el usuario en la web. Verificado en Olímpica:
-                # sin sc -> 16.350, con sc=1 -> 17.175 (el de la página).
-                "sc": self.config.sales_channel,
-                "_from": offset,
-                "_to": offset + PAGE_SIZE - 1,
-            }
-            if category_id is not None:
-                params["fq"] = f"C:{category_id}"
-
+            params = self._search_params(category_id, price_range, offset, PAGE_SIZE)
             try:
                 data, headers = self._get(endpoint, params)
             except urllib.error.HTTPError as exc:
