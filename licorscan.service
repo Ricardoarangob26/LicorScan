@@ -17,13 +17,15 @@ Environment="PATH=/opt/LicorScan/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sb
 ExecStart=/bin/bash -c ' \
   source venv/bin/activate && \
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] Starting LicorScan job" >> /var/log/licorscan/scraper.log && \
-  py -3 -m scraper.main --store exito --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
-  py -3 -m scraper.main --store carulla --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
-  py -3 -m scraper.main --store olimpica --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] Ingesta VTEX a la base normalizada..." >> /var/log/licorscan/scraper.log && \
+  python -m core.ingest --all >> /var/log/licorscan/scraper.log 2>&1 || echo "AVISO: ingesta con fallos, sigo con el scraping" >> /var/log/licorscan/scraper.log; \
+  python -m scraper.main --store exito --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  python -m scraper.main --store carulla --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
+  python -m scraper.main --store olimpica --verbose >> /var/log/licorscan/scraper.log 2>&1 && \
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] Building catalog..." >> /var/log/licorscan/scraper.log && \
-  py -3 build_front_catalog.py >> /var/log/licorscan/scraper.log 2>&1 && \
+  python build_front_catalog.py >> /var/log/licorscan/scraper.log 2>&1 && \
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] Uploading to Supabase..." >> /var/log/licorscan/scraper.log && \
-  py -3 scripts/upload_to_supabase.py >> /var/log/licorscan/scraper.log 2>&1 && \
+  python scripts/upload_to_supabase.py --via-db --prune >> /var/log/licorscan/scraper.log 2>&1 && \
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] Pushing to GitHub..." >> /var/log/licorscan/scraper.log && \
   git add frontend/catalog-data.js && \
   (git commit -m "Auto: Update catalog $(date +%Y-%m-%d_%H:%M)" || echo "No changes to commit") && \

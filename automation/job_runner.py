@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cache-ttl-minutes", type=int, default=default_cache_ttl, help="TTL lógico del caché para metadata")
     parser.add_argument("--loop-sleep-seconds", type=int, default=default_loop_sleep, help="Pausa entre ciclos del scheduler")
     parser.add_argument("--run-once", action="store_true", help="Ejecuta un solo ciclo y termina")
+    parser.add_argument("--no-ingest", action="store_true", help="Omitir la ingesta a la base normalizada")
     parser.add_argument("--verbose", "-v", action="store_true", help="Logs DEBUG")
     return parser.parse_args()
 
@@ -55,6 +56,24 @@ def run_store_scraper(store: str) -> bool:
         logger.error(f"[job] Fallo scraping {store} (exit={completed.returncode})")
         return False
     logger.success(f"[job] Scraping OK para {store}")
+    return True
+
+
+def run_store_ingest(store: str) -> bool:
+    """Ingesta a la base normalizada, con historial de precios.
+
+    Es el camino nuevo (adaptador VTEX -> Postgres). Corre en paralelo al
+    scraping por DOM mientras el frontend siga leyendo la tabla vieja;
+    cada corrida agrega una fila a `prices`, que es lo que construye el
+    historial que antes se perdia al rotar los JSONL.
+    """
+    cmd = [sys.executable, "-m", "core.ingest", "--store", store]
+    logger.info(f"[job] Ingesta a BD: {' '.join(cmd)}")
+    completed = subprocess.run(cmd, cwd=BASE_DIR, check=False)
+    if completed.returncode != 0:
+        logger.error(f"[job] Fallo ingesta {store} (exit={completed.returncode})")
+        return False
+    logger.success(f"[job] Ingesta OK para {store}")
     return True
 
 
@@ -105,12 +124,19 @@ def write_status(
     logger.info(f"[job] Estado escrito en {STATUS_FILE}")
 
 
-def run_cycle(states: list[JobState], cache_ttl_minutes: int) -> None:
+def run_cycle(states: list[JobState], cache_ttl_minutes: int, ingest: bool = True) -> None:
     now = datetime.now(timezone.utc)
     touched_store = False
     for state in states:
         if not state.due(now):
             continue
+
+        # Camino nuevo: alimenta la base normalizada y el historial.
+        # No aborta el ciclo si falla; el scraping por DOM sigue siendo
+        # lo que mantiene vivo el frontend actual.
+        if ingest:
+            run_store_ingest(state.store)
+
         ok = run_store_scraper(state.store)
         if ok:
             state.last_run_at = datetime.now(timezone.utc)
@@ -137,12 +163,12 @@ def main() -> None:
     logger.info(f"[job] Intervalo por tienda: {args.interval_minutes} minutos")
 
     if args.run_once:
-        run_cycle(states, args.cache_ttl_minutes)
+        run_cycle(states, args.cache_ttl_minutes, ingest=not args.no_ingest)
         logger.success("[job] Ciclo unico completado")
         return
 
     while True:
-        run_cycle(states, args.cache_ttl_minutes)
+        run_cycle(states, args.cache_ttl_minutes, ingest=not args.no_ingest)
         time.sleep(args.loop_sleep_seconds)
 
 
