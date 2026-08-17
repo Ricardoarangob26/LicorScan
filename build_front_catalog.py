@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from dataclasses import dataclass
@@ -16,9 +17,18 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 HISTORY_FILES_PER_STORE = int(os.getenv("FRONT_HISTORY_FILES", "8"))
 
 
+def _stable_id(store: str, url: str) -> str:
+    """ID determinístico (no un contador) para que re-subir el mismo
+    producto en corridas futuras actualice la misma fila en vez de
+    dejar huérfanas las filas viejas cuando el scrape trae menos
+    productos que la vez anterior."""
+    digest = hashlib.sha1(url.encode("utf-8")).hexdigest()[:16]
+    return f"{store}-{digest}"
+
+
 @dataclass(frozen=True)
 class FrontProduct:
-    id: int
+    id: str
     title: str
     store: str
     store_name: str
@@ -93,12 +103,10 @@ def _build_history_map(files: list[Path]) -> dict[tuple[str, str], list[dict[str
 
 def _load_products_from_file(
     path: Path,
-    start_id: int,
     history_map: dict[tuple[str, str], list[dict[str, object]]],
     real_cartagena_matches: list[dict[str, object]],
 ) -> list[FrontProduct]:
     rows: list[FrontProduct] = []
-    next_id = start_id
     seen_urls: set[str] = set()
 
     with path.open("r", encoding="utf-8") as handle:
@@ -121,14 +129,15 @@ def _load_products_from_file(
             if list_price is not None and list_price <= float(price):
                 list_price = None
 
+            store = (item.get("store") or "").strip()
             seen_urls.add(url)
             history_key = (url, name)
             history = history_map.get(history_key, [])
             rows.append(
                 FrontProduct(
-                    id=next_id,
+                    id=_stable_id(store, url),
                     title=name,
-                    store=(item.get("store") or "").strip(),
+                    store=store,
                     store_name=(item.get("store_name") or item.get("store") or "").strip(),
                     category=_title_case_category(item.get("category")),
                     price=float(price),
@@ -145,7 +154,6 @@ def _load_products_from_file(
                     ),
                 )
             )
-            next_id += 1
 
     return rows
 
@@ -153,7 +161,6 @@ def _load_products_from_file(
 def build_catalog() -> dict[str, object]:
     files_by_store = _jsonl_by_store()
     products: list[FrontProduct] = []
-    next_id = 1
     latest_files: dict[str, Path] = {}
     real_cartagena_matches = load_real_cartagena_home_matches()
 
@@ -164,9 +171,8 @@ def build_catalog() -> dict[str, object]:
         history_files = store_files[:HISTORY_FILES_PER_STORE]
         history_map = _build_history_map(history_files)
 
-        rows = _load_products_from_file(latest_file, next_id, history_map, real_cartagena_matches)
+        rows = _load_products_from_file(latest_file, history_map, real_cartagena_matches)
         products.extend(rows)
-        next_id += len(rows)
 
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

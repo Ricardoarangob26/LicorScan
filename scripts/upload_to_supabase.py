@@ -109,12 +109,45 @@ def db_upsert_batch(dsn: str, table: str, batch: list[dict]) -> None:
         conn.close()
 
 
+def db_delete_stale(dsn: str, table: str, records: list[dict]) -> int:
+    """Borra filas de las tiendas presentes en este catálogo que ya no
+    aparecen en él (productos retirados o renombrados). Sin esto las
+    filas viejas quedan huérfanas y el frontend las sigue mostrando
+    con datos desactualizados."""
+    import psycopg2
+
+    stores = {rec["store"] for rec in records if rec.get("store")}
+    if not stores:
+        return 0
+
+    ids_by_store: dict[str, list[str]] = {store: [] for store in stores}
+    for rec in records:
+        if rec.get("store") in ids_by_store:
+            ids_by_store[rec["store"]].append(rec["id"])
+
+    deleted = 0
+    conn = psycopg2.connect(dsn, connect_timeout=15)
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for store, ids in ids_by_store.items():
+                    cur.execute(
+                        f"delete from {table} where store = %s and not (id = any(%s))",
+                        (store, ids),
+                    )
+                    deleted += cur.rowcount
+    finally:
+        conn.close()
+    return deleted
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", default="frontend/catalog-data.js")
     parser.add_argument("--table", default="products")
     parser.add_argument("--batch", type=int, default=200, help="Batch size for upsert")
     parser.add_argument("--via-db", action="store_true", help="Upsert over direct Postgres connection (SUPABASE_DB_URL) instead of REST")
+    parser.add_argument("--prune", action="store_true", help="Delete rows of the catalog's stores that are no longer present (requires --via-db)")
     args = parser.parse_args()
 
     env_path = Path(".env")
@@ -139,6 +172,9 @@ def main():
             batch = records[i : i + args.batch]
             print(f"Upserting batch {i}..{i+len(batch)-1} (db)")
             db_upsert_batch(dsn, args.table, batch)
+        if args.prune:
+            removed = db_delete_stale(dsn, args.table, records)
+            print(f"Pruned {removed} stale rows")
     else:
         SUPABASE_URL = os.environ.get("SUPABASE_URL")
         SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
