@@ -26,8 +26,15 @@ from core.normalize import clean_barcode, normalize_text, parse_quantity
 
 # VTEX solo devuelve 50 items por petición.
 PAGE_SIZE = 50
+# VTEX rechaza con HTTP 400 cualquier offset por encima de esto. Una
+# categoría con más productos que el tope NO se puede recorrer entera:
+# hay que partirla en subcategorías. Verificado en Éxito, donde 'Vinos
+# y licores' tiene 4.401 y corta en 2.550.
+MAX_OFFSET = 2500
 # Tope defensivo: sin esto, una categoría mal configurada pagina sin fin.
 MAX_PAGES_PER_CATEGORY = 120
+# Hasta qué profundidad bajar subdividiendo categorías grandes.
+MAX_SUBDIVISION_DEPTH = 3
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -67,22 +74,95 @@ class VTEXAdapter(StoreAdapter):
     # ---- Catálogo ----
 
     def fetch_products(self) -> Iterator[NormalizedProduct]:
-        if not self.config.category_ids:
-            logger.warning(f"[{self.slug}] sin category_ids configurados; no hay nada que traer")
+        if not self.config.category_ids and not self.config.category_paths:
+            logger.warning(f"[{self.slug}] sin categorías configuradas; no hay nada que traer")
             return
 
         seen_skus: set[str] = set()
         for category_id in self.config.category_ids:
-            yield from self._fetch_category(category_id, seen_skus)
+            yield from self._fetch_subdividing(category_id, seen_skus)
+        for path in self.config.category_paths:
+            yield from self._fetch_category(seen_skus, path=path)
 
-    def _fetch_category(self, category_id: int, seen_skus: set[str]) -> Iterator[NormalizedProduct]:
+    # ---- Subdivisión automática ----
+
+    def _category_total(self, category_id: int) -> int | None:
+        try:
+            _, headers = self._get(
+                "/api/catalog_system/pub/products/search",
+                {"fq": f"C:{category_id}", "sc": self.config.sales_channel, "_from": 0, "_to": 1},
+            )
+        except Exception:
+            return None
+        return _parse_total(headers)
+
+    def _category_tree(self) -> list[dict]:
+        if not hasattr(self, "_tree_cache"):
+            try:
+                self._tree_cache = self.discover_categories(depth=MAX_SUBDIVISION_DEPTH + 1)
+            except Exception as exc:
+                logger.warning(f"[{self.slug}] no se pudo leer el árbol de categorías: {exc!r}")
+                self._tree_cache = []
+        return self._tree_cache
+
+    def _children_of(self, category_id: int) -> list[int]:
+        def walk(nodes: list[dict]) -> list[int] | None:
+            for node in nodes:
+                if node.get("id") == category_id:
+                    return [c["id"] for c in node.get("children") or [] if c.get("id")]
+                found = walk(node.get("children") or [])
+                if found is not None:
+                    return found
+            return None
+
+        return walk(self._category_tree()) or []
+
+    def _fetch_subdividing(
+        self, category_id: int, seen_skus: set[str], depth: int = 0
+    ) -> Iterator[NormalizedProduct]:
+        """Baja a subcategorías cuando la categoría excede el tope de VTEX.
+
+        Sin esto se pierde silenciosamente todo lo que quede más allá del
+        producto 2.500 de una categoría grande.
+        """
+        total = self._category_total(category_id)
+        self._polite_wait()
+
+        if total is not None and total > MAX_OFFSET and depth < MAX_SUBDIVISION_DEPTH:
+            children = self._children_of(category_id)
+            if children:
+                logger.info(
+                    f"[{self.slug}] cat {category_id} tiene {total} productos "
+                    f"(tope {MAX_OFFSET}); la parto en {len(children)} subcategorías"
+                )
+                for child in children:
+                    yield from self._fetch_subdividing(child, seen_skus, depth + 1)
+                return
+            logger.warning(
+                f"[{self.slug}] cat {category_id} tiene {total} productos y no tiene "
+                f"subcategorías: se perderán los que pasen de {MAX_OFFSET}"
+            )
+
+        yield from self._fetch_category(seen_skus, category_id=category_id)
+
+    def _fetch_category(
+        self,
+        seen_skus: set[str],
+        category_id: int | None = None,
+        path: str | None = None,
+    ) -> Iterator[NormalizedProduct]:
+        label = f"cat {category_id}" if category_id is not None else f"ruta '{path}'"
+        if path:
+            endpoint = "/api/catalog_system/pub/products/search/" + urllib.parse.quote(path.strip("/"))
+        else:
+            endpoint = "/api/catalog_system/pub/products/search"
+
         offset = 0
         total: int | None = None
         pages = 0
 
         while pages < MAX_PAGES_PER_CATEGORY:
-            params = {
-                "fq": f"C:{category_id}",
+            params: dict[str, Any] = {
                 # Sin `sc` explícito VTEX devuelve un precio base que no es
                 # el que ve el usuario en la web. Verificado en Olímpica:
                 # sin sc -> 16.350, con sc=1 -> 17.175 (el de la página).
@@ -90,19 +170,22 @@ class VTEXAdapter(StoreAdapter):
                 "_from": offset,
                 "_to": offset + PAGE_SIZE - 1,
             }
+            if category_id is not None:
+                params["fq"] = f"C:{category_id}"
+
             try:
-                data, headers = self._get("/api/catalog_system/pub/products/search", params)
+                data, headers = self._get(endpoint, params)
             except urllib.error.HTTPError as exc:
                 # VTEX responde 400 cuando el offset supera el máximo permitido.
-                logger.warning(f"[{self.slug}] cat {category_id} offset {offset}: HTTP {exc.code}, corto aquí")
+                logger.warning(f"[{self.slug}] {label} offset {offset}: HTTP {exc.code}, corto aquí")
                 return
             except Exception as exc:
-                logger.error(f"[{self.slug}] cat {category_id} offset {offset}: {exc!r}")
+                logger.error(f"[{self.slug}] {label} offset {offset}: {exc!r}")
                 return
 
             if total is None:
                 total = _parse_total(headers)
-                logger.info(f"[{self.slug}] categoría {category_id}: {total if total is not None else '?'} productos")
+                logger.info(f"[{self.slug}] {label}: {total if total is not None else '?'} productos")
 
             if not data:
                 return
@@ -120,7 +203,7 @@ class VTEXAdapter(StoreAdapter):
                 return
             self._polite_wait()
 
-        logger.warning(f"[{self.slug}] categoría {category_id}: alcanzado el tope de {MAX_PAGES_PER_CATEGORY} páginas")
+        logger.warning(f"[{self.slug}] {label}: alcanzado el tope de {MAX_PAGES_PER_CATEGORY} páginas")
 
     # ---- Traducción a modelo normalizado ----
 

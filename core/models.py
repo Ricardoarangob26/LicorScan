@@ -69,5 +69,9 @@ class StoreConfig:
     country_code: str = "CO"
     sales_channel: int = 1
     delay_seconds: float = 3.0
-    # Categorías a recorrer. En VTEX son ids del árbol de categorías.
+    # Categorías a recorrer, por id del árbol (fq=C:<id>).
     category_ids: list[int] = field(default_factory=list)
+    # Alternativa por ruta. Hace falta porque en algunas tiendas el id
+    # del árbol no mapea al índice de productos: en Olímpica
+    # fq=C:900080000 devuelve 0 y la ruta 'Supermercado/Licores' 2.087.
+    category_paths: list[str] = field(default_factory=list)

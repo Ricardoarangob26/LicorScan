@@ -33,8 +33,9 @@ STORES: dict[str, StoreConfig] = {
         slug="olimpica",
         name="Olímpica",
         base_url="https://www.olimpica.com",
-        # Licores (900080000) · Bebidas (900090000)
-        category_ids=[900080000, 900090000],
+        # Por ruta, no por id: fq=C:900080000 devuelve 0 productos aunque
+        # la categoría existe en el árbol; la ruta devuelve 2.087.
+        category_paths=["Supermercado/Licores", "Supermercado/Bebidas"],
         delay_seconds=3.0,
     ),
     "d1": StoreConfig(

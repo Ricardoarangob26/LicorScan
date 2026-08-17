@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
 from loguru import logger
 
@@ -30,6 +31,33 @@ def discover(config: StoreConfig, depth: int = 3) -> None:
         print(f"  {node.get('id'):>10}  {node.get('name')}")
         for child in node.get("children") or []:
             print(f"  {child.get('id'):>10}      - {child.get('name')}")
+
+
+def _write_batch_with_retry(store_id: int, run_id: int, batch: list, stats: dict,
+                            attempts: int = 6) -> bool:
+    """Reintenta el lote ante fallos transitorios de red.
+
+    Una ingesta completa tarda decenas de minutos y una caída puntual de
+    DNS o de la conexión no debería tirar toda la corrida: se espera y se
+    reintenta el lote, que es idempotente (upsert por (store_id, sku)).
+    El único efecto de repetir es una fila extra en `prices`, que al ser
+    append-only es una observación más, no un dato corrupto.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            _write_batch(store_id, run_id, batch, stats)
+            return True
+        except Exception as exc:
+            if attempt == attempts:
+                logger.error(f"lote descartado tras {attempts} intentos: {exc!r}")
+                stats["errors"] += len(batch)
+                return False
+            # Espera creciente: un corte de red puede durar varios
+            # minutos, y esperar sale más barato que perder la corrida.
+            wait = min(30 * attempt, 180)
+            logger.warning(f"fallo de red en el lote ({exc!r}); reintento {attempt}/{attempts - 1} en {wait}s")
+            time.sleep(wait)
+    return False
 
 
 def _write_batch(store_id: int, run_id: int, batch: list, stats: dict) -> None:
@@ -88,11 +116,11 @@ def ingest_store(config: StoreConfig, dry_run: bool = False, batch_size: int = 1
             stats["products_found"] += 1
             batch.append(product)
             if len(batch) >= batch_size:
-                _write_batch(store_id, run_id, batch, stats)
+                _write_batch_with_retry(store_id, run_id, batch, stats)
                 batch = []
                 logger.info(f"[{config.slug}] {stats['products_found']} procesados…")
         if batch:
-            _write_batch(store_id, run_id, batch, stats)
+            _write_batch_with_retry(store_id, run_id, batch, stats)
     except Exception as exc:
         status = "failed"
         notes = repr(exc)[:400]
