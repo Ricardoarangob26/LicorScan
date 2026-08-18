@@ -1,0 +1,36 @@
+# Desarrollo local de la API.
+#
+# No incluye Postgres: los datos viven en Supabase y compartir esa base
+# entre local y producción evita tener que sembrar un catálogo de prueba
+# cada vez. Si en algún momento quieres una base local aislada,
+# descomenta el servicio `db` y apunta SUPABASE_DB_URL ahí.
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SUPABASE_DB_URL: ${SUPABASE_DB_URL}
+      ENVIRONMENT: development
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: "*"
+    volumes:
+      # Recarga en caliente durante el desarrollo.
+      - ./apiserver:/app/apiserver:ro
+      - ./core:/app/core:ro
+    command: sh -c "uvicorn apiserver.main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: unless-stopped
+
+  # db:
+  #   image: postgres:17-alpine
+  #   environment:
+  #     POSTGRES_PASSWORD: licorscan
+  #     POSTGRES_DB: licorscan
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+
+# volumes:
+#   pgdata:

@@ -6,3 +6,9 @@ pytest
 pytest-asyncio
 holidays
 psycopg2-binary
+
+# API
+fastapi
+uvicorn[standard]
+pydantic
+httpx

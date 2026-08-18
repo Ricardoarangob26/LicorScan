@@ -1,0 +1,10 @@
+# Dependencias solo de la API.
+#
+# Separadas de requirements.txt a propósito: la API no necesita
+# Playwright, que arrastra un Chromium de ~300 MB y no se usa aquí.
+fastapi
+uvicorn[standard]
+pydantic
+psycopg2-binary
+python-dotenv
+loguru
